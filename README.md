@@ -1,4 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/README.md b/README.md
 index 05d96494efaefbba27aea6494dd492914ab190d1..0db55b3afc543329e8d514c04afc663f966d9026 100644
 --- a/README.md
@@ -67,6 +66,3 @@ index 05d96494efaefbba27aea6494dd492914ab190d1..0db55b3afc543329e8d514c04afc663f
 +
 +- As regras e dados ficam em **localStorage**. Para uso corporativo, exporte e mantenha backups.
 +- Conciliações automáticas devem ser revisadas por um contador responsável.
- 
-EOF
-)
