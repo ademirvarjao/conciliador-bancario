@@ -1,0 +1,253 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/styles.css b/styles.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac0041c5ab57e371bbdb724ed6ad94c2f17aef29
+--- /dev/null
++++ b/styles.css
+@@ -0,0 +1,243 @@
++:root {
++  color-scheme: light;
++  --primary: #1e3a8a;
++  --secondary: #64748b;
++  --bg: #f8fafc;
++  --card: #ffffff;
++  --border: #e2e8f0;
++  --accent: #0f766e;
++  --danger: #b91c1c;
++}
++
++* {
++  box-sizing: border-box;
++  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
++}
++
++body {
++  margin: 0;
++  background: var(--bg);
++  color: #0f172a;
++}
++
++header.app-header {
++  padding: 32px;
++  background: linear-gradient(120deg, #1e3a8a, #0f766e);
++  color: #fff;
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 24px;
++  flex-wrap: wrap;
++}
++
++header h1 {
++  margin: 0 0 8px;
++}
++
++header p {
++  margin: 0;
++  max-width: 640px;
++}
++
++main {
++  padding: 24px 32px 56px;
++  display: flex;
++  flex-direction: column;
++  gap: 24px;
++}
++
++.card {
++  background: var(--card);
++  border: 1px solid var(--border);
++  border-radius: 16px;
++  padding: 24px;
++  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
++}
++
++.grid {
++  display: grid;
++  gap: 16px;
++  margin-top: 12px;
++}
++
++.grid.two {
++  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
++}
++
++.grid.three {
++  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
++}
++
++label {
++  font-weight: 600;
++  display: block;
++  margin-bottom: 6px;
++}
++
++input, select, textarea {
++  width: 100%;
++  padding: 10px 12px;
++  border-radius: 10px;
++  border: 1px solid var(--border);
++  background: #fff;
++  font-size: 14px;
++}
++
++textarea {
++  resize: vertical;
++}
++
++button {
++  border: none;
++  background: var(--accent);
++  color: #fff;
++  padding: 10px 16px;
++  border-radius: 999px;
++  font-weight: 600;
++  cursor: pointer;
++  transition: transform 0.2s ease, opacity 0.2s ease;
++}
++
++button.secondary {
++  background: var(--secondary);
++}
++
++button:hover {
++  transform: translateY(-1px);
++  opacity: 0.9;
++}
++
++.actions {
++  margin-top: 16px;
++  display: flex;
++  gap: 12px;
++  flex-wrap: wrap;
++}
++
++.header-actions {
++  display: flex;
++  gap: 12px;
++  flex-wrap: wrap;
++}
++
++.hint {
++  color: var(--secondary);
++  font-size: 13px;
++}
++
++.summary {
++  margin-top: 16px;
++  padding: 12px;
++  border-radius: 12px;
++  background: #f1f5f9;
++  color: #334155;
++}
++
++.inline {
++  display: flex;
++  gap: 8px;
++  align-items: center;
++}
++
++.inline input {
++  flex: 1;
++}
++
++.table-wrapper {
++  margin-top: 16px;
++  overflow-x: auto;
++}
++
++.table-actions {
++  display: flex;
++  gap: 12px;
++  flex-wrap: wrap;
++  align-items: center;
++}
++
++.table-actions input,
++.table-actions select {
++  max-width: 240px;
++}
++
++.table-actions select {
++  width: auto;
++}
++
++table {
++  width: 100%;
++  border-collapse: collapse;
++  font-size: 14px;
++}
++
++th, td {
++  padding: 12px;
++  border-bottom: 1px solid var(--border);
++  text-align: left;
++}
++
++tr:nth-child(even) {
++  background: #f8fafc;
++}
++
++.accounts-list,
++.rules-list {
++  margin-top: 16px;
++  display: flex;
++  gap: 8px;
++  flex-wrap: wrap;
++}
++
++.tag {
++  background: #e2e8f0;
++  color: #1e293b;
++  padding: 6px 12px;
++  border-radius: 999px;
++  display: inline-flex;
++  align-items: center;
++  gap: 6px;
++  font-size: 13px;
++}
++
++.tag button {
++  background: transparent;
++  color: var(--danger);
++  padding: 0;
++  font-weight: 700;
++}
++
++.status-pill {
++  padding: 4px 10px;
++  border-radius: 999px;
++  font-size: 12px;
++  font-weight: 600;
++}
++
++.status-matched {
++  background: #dcfce7;
++  color: #166534;
++}
++
++.status-pending {
++  background: #fee2e2;
++  color: #991b1b;
++}
++
++footer {
++  padding: 24px 32px;
++  text-align: center;
++  color: #64748b;
++}
++
++@media (max-width: 720px) {
++  header.app-header {
++    flex-direction: column;
++    align-items: flex-start;
++  }
++
++  .inline {
++    flex-direction: column;
++    align-items: stretch;
++  }
++}
+ 
+EOF
+)
