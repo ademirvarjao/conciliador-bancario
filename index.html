@@ -1,0 +1,196 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/index.html b/index.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..38590fce3148f4b3290a0412d8ecd56496b9c40f
+--- /dev/null
++++ b/index.html
+@@ -0,0 +1,186 @@
++<!doctype html>
++<html lang="pt-BR">
++<head>
++  <meta charset="utf-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1" />
++  <title>Conciliador Bancário Inteligente</title>
++  <link rel="stylesheet" href="styles.css" />
++</head>
++<body>
++  <header class="app-header">
++    <div>
++      <h1>Conciliador Bancário Inteligente</h1>
++      <p>Importe extratos (CSV/OFX/JSON), converta para padrão único, concilie e treine regras por empresa.</p>
++    </div>
++    <div class="header-actions">
++      <button id="load-samples">Carregar amostras</button>
++      <button id="reset-data" class="secondary">Limpar dados</button>
++    </div>
++  </header>
++
++  <main>
++    <section class="card">
++      <h2>1. Importação de Extratos</h2>
++      <div class="grid two">
++        <div>
++          <label for="file-input">Arquivos de extrato (CSV, OFX, JSON):</label>
++          <input id="file-input" type="file" multiple />
++          <p class="hint">Aceita múltiplos arquivos. PDF pode ser transformado em CSV usando a opção abaixo.</p>
++        </div>
++        <div>
++          <label for="pdf-notes">Conversão de PDF (cliente):</label>
++          <textarea id="pdf-notes" rows="4" placeholder="Cole aqui um trecho do PDF para documentar a conversão. Use um serviço externo ou o template de colunas e importe como CSV."></textarea>
++        </div>
++      </div>
++      <div class="grid three">
++        <div>
++          <label for="company-name">Empresa / CNPJ:</label>
++          <input id="company-name" type="text" placeholder="Razão social ou apelido" />
++        </div>
++        <div>
++          <label for="bank-name">Banco:</label>
++          <input id="bank-name" type="text" placeholder="Ex: Itaú, Bradesco" />
++        </div>
++        <div>
++          <label for="currency">Moeda:</label>
++          <select id="currency">
++            <option value="BRL">BRL</option>
++            <option value="USD">USD</option>
++            <option value="EUR">EUR</option>
++          </select>
++        </div>
++      </div>
++      <div class="actions">
++        <button id="parse-files">Processar arquivos</button>
++        <button id="download-unified" class="secondary">Baixar extrato unificado</button>
++      </div>
++      <div id="import-summary" class="summary"></div>
++    </section>
++
++    <section class="card">
++      <h2>2. Plano de Contas &amp; Contas Bancárias</h2>
++      <div class="grid two">
++        <div>
++          <label for="accounts-file">Importar plano de contas (CSV):</label>
++          <input id="accounts-file" type="file" />
++          <p class="hint">Formato esperado: codigo,descricao,tipo (ativo,passivo,resultado)</p>
++        </div>
++        <div>
++          <label for="new-account">Criar conta manualmente:</label>
++          <div class="inline">
++            <input id="new-account" type="text" placeholder="Ex: 1.1.1 - Banco Itaú" />
++            <button id="add-account" class="secondary">Adicionar</button>
++          </div>
++        </div>
++      </div>
++      <div class="accounts-list" id="accounts-list"></div>
++    </section>
++
++    <section class="card">
++      <h2>3. Regras Inteligentes (Aprendizado)</h2>
++      <div class="grid two">
++        <div>
++          <label for="rule-pattern">Padrão / Histórico:</label>
++          <input id="rule-pattern" type="text" placeholder="Ex: PIX RECEBIDO|TED|TARIFA" />
++        </div>
++        <div>
++          <label for="rule-account">Conta destino:</label>
++          <input id="rule-account" type="text" placeholder="Ex: 3.1.2 - Receitas Financeiras" />
++        </div>
++      </div>
++      <div class="actions">
++        <button id="add-rule">Salvar regra</button>
++      </div>
++      <div id="rules-list" class="rules-list"></div>
++    </section>
++
++    <section class="card">
++      <h2>4. Transações Unificadas</h2>
++      <div class="table-actions">
++        <input id="search-transactions" type="search" placeholder="Buscar por histórico, valor ou conta" />
++        <select id="filter-status">
++          <option value="all">Todas</option>
++          <option value="matched">Conciliadas</option>
++          <option value="pending">Pendentes</option>
++        </select>
++      </div>
++      <div class="table-wrapper">
++        <table id="transactions-table">
++          <thead>
++            <tr>
++              <th>Data</th>
++              <th>Descrição</th>
++              <th>Débito</th>
++              <th>Crédito</th>
++              <th>Saldo</th>
++              <th>Conta</th>
++              <th>Status</th>
++            </tr>
++          </thead>
++          <tbody></tbody>
++        </table>
++      </div>
++    </section>
++
++    <section class="card">
++      <h2>5. Conciliação</h2>
++      <div class="grid two">
++        <div>
++          <label for="ledger-input">Lançamentos contábeis (CSV):</label>
++          <input id="ledger-input" type="file" />
++          <p class="hint">Formato esperado: data,descricao,valor,conta</p>
++        </div>
++        <div>
++          <label for="tolerance">Tolerância de conciliação (dias / valor):</label>
++          <div class="inline">
++            <input id="tolerance-days" type="number" min="0" value="2" />
++            <input id="tolerance-value" type="number" min="0" step="0.01" value="0.05" />
++            <button id="run-reconciliation">Conciliar</button>
++          </div>
++        </div>
++      </div>
++      <div id="reconciliation-summary" class="summary"></div>
++      <div class="table-wrapper">
++        <table id="reconciliation-table">
++          <thead>
++            <tr>
++              <th>Banco</th>
++              <th>Contabilidade</th>
++              <th>Diferença</th>
++              <th>Ação</th>
++            </tr>
++          </thead>
++          <tbody></tbody>
++        </table>
++      </div>
++    </section>
++
++    <section class="card">
++      <h2>6. Exportação</h2>
++      <div class="actions">
++        <button id="export-csv">Exportar CSV</button>
++        <button id="export-json" class="secondary">Exportar JSON</button>
++      </div>
++    </section>
++  </main>
++
++  <footer>
++    <p>Armazena regras e dados no navegador (localStorage). Para uso corporativo, utilize backups e validação humana.</p>
++  </footer>
++
++  <template id="transaction-row-template">
++    <tr>
++      <td data-field="date"></td>
++      <td data-field="description"></td>
++      <td data-field="debit"></td>
++      <td data-field="credit"></td>
++      <td data-field="balance"></td>
++      <td>
++        <input class="account-input" type="text" placeholder="Conta..." />
++      </td>
++      <td data-field="status"></td>
++    </tr>
++  </template>
++</body>
++<script src="app.js"></script>
++</html>
+ 
+EOF
+)
