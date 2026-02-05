@@ -1,248 +1,536 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Conciliador Bancário Pro</title>
-  <link rel="stylesheet" href="styles.css" />
-  </head>
-<body>
-  <div class="app-container">
-    <header class="app-header">
-      <div class="header-brand">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="brand-icon"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-        <div>
-          <h1>Conciliador Pro</h1>
-          <p>Painel de conciliação inteligente</p>
-        </div>
-      </div>
-      <div class="header-actions">
-        <button id="load-samples" class="btn btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-          Carregar amostras
-        </button>
-        <button id="reset-data" class="btn btn-danger btn-outline">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-          Limpar dados
-        </button>
-      </div>
-    </header>
+const state = {
+  transactions: [],
+  accounts: [],
+  rules: [],
+  ledgerEntries: [],
+  company: '',
+  bank: '',
+  currency: 'BRL',
+};
 
-    <main class="app-content">
-      
-      <section class="card highlight-card">
-        <div class="card-header">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-          <h2>1. Central de Importação</h2>
-        </div>
-        <div class="card-body">
-          <div class="grid two-columns-sidebar-right">
-            <div class="upload-zone-container">
-              <label for="file-input" class="upload-zone">
-                <input id="file-input" type="file" multiple hidden />
-                <div class="upload-content">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-                  <span>Clique ou arraste arquivos OFX, CSV ou JSON aqui</span>
-                  <small>Detecção automática de formatos e moedas.</small>
-                </div>
-              </label>
-              <div id="import-summary" class="banner banner-info hidden">Aguardando arquivos...</div>
-            </div>
+const storageKey = 'conciliador-bancario-data-v1';
 
-            <div class="form-group">
-               <label for="pdf-notes">Notas de PDF (Opcional)</label>
-               <textarea id="pdf-notes" rows="6" class="form-control" placeholder="Cole aqui trechos para documentação..."></textarea>
-            </div>
-          </div>
+// Mapeamento de elementos com tratamento de erro básico
+const elements = {
+  fileInput: document.querySelector('#file-input'),
+  parseFiles: document.querySelector('#parse-files'),
+  importSummary: document.querySelector('#import-summary'),
+  downloadUnified: document.querySelector('#download-unified'),
+  accountsFile: document.querySelector('#accounts-file'),
+  addAccount: document.querySelector('#add-account'),
+  newAccount: document.querySelector('#new-account'),
+  accountsList: document.querySelector('#accounts-list'),
+  rulePattern: document.querySelector('#rule-pattern'),
+  ruleAccount: document.querySelector('#rule-account'),
+  addRule: document.querySelector('#add-rule'),
+  rulesList: document.querySelector('#rules-list'),
+  transactionsTable: document.querySelector('#transactions-table tbody'),
+  searchTransactions: document.querySelector('#search-transactions'),
+  filterStatus: document.querySelector('#filter-status'),
+  ledgerInput: document.querySelector('#ledger-input'),
+  toleranceDays: document.querySelector('#tolerance-days'),
+  toleranceValue: document.querySelector('#tolerance-value'),
+  runReconciliation: document.querySelector('#run-reconciliation'),
+  reconciliationSummary: document.querySelector('#reconciliation-summary'),
+  reconciliationTable: document.querySelector('#reconciliation-table tbody'),
+  exportCsv: document.querySelector('#export-csv'),
+  exportJson: document.querySelector('#export-json'),
+  loadSamples: document.querySelector('#load-samples'),
+  resetData: document.querySelector('#reset-data'),
+  companyName: document.querySelector('#company-name'),
+  bankName: document.querySelector('#bank-name'),
+  currency: document.querySelector('#currency'),
+  pdfNotes: document.querySelector('#pdf-notes'), // Adicionado referência faltante
+};
 
-          <div class="grid three-columns mt-6">
-            <div class="form-group">
-              <label for="company-name">Empresa</label>
-              <input id="company-name" type="text" class="form-control" placeholder="Ex: Minha Loja LTDA" />
-            </div>
-            <div class="form-group">
-              <label for="bank-name">Banco</label>
-              <input id="bank-name" type="text" class="form-control" placeholder="Ex: Itaú" />
-            </div>
-            <div class="form-group">
-              <label for="currency">Moeda Visualização</label>
-              <select id="currency" class="form-control form-select">
-                <option value="BRL" selected>BRL (R$)</option>
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-              </select>
-            </div>
-          </div>
+// Gerador de ID robusto (fallback para contextos não-seguros)
+function generateId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+}
 
-          <div class="actions-bar mt-6">
-            <button id="parse-files" class="btn btn-primary btn-lg">Processar Arquivos</button>
-            <button id="download-unified" class="btn btn-secondary">Baixar Unificado</button>
-          </div>
-        </div>
-      </section>
+// Parser de valores numéricos flexível
+function parseAmount(value, isOFX = false) {
+  if (!value) return 0;
+  let str = value.toString().trim();
+  
+  if (isOFX) {
+    // OFX usa padrão ponto decimal: -123.45
+    return parseFloat(str) || 0;
+  }
 
-      <div class="grid two-columns">
-        <section class="card">
-          <div class="card-header">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-            <h2>2. Plano de Contas</h2>
-          </div>
-          <div class="card-body">
-            <div class="form-group">
-              <label for="accounts-file" class="file-upload-label">
-                <span>Importar CSV</span>
-                <input id="accounts-file" type="file" class="form-control-file" />
-              </label>
-            </div>
-            <div class="input-group mt-4">
-              <input id="new-account" type="text" class="form-control" placeholder="Ex: 1.1.1 - Banco Itaú" />
-              <button id="add-account" class="btn btn-secondary">Adicionar</button>
-            </div>
-            <div class="tags-container" id="accounts-list"></div>
-          </div>
-        </section>
+  // Detecta se é formato brasileiro (1.234,56) ou internacional (1,234.56)
+  const hasComma = str.includes(',');
+  const hasDot = str.includes('.');
 
-        <section class="card">
-          <div class="card-header">
-             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
-            <h2>3. Regras Inteligentes</h2>
-          </div>
-          <div class="card-body">
-            <div class="grid two-columns-tight">
-              <div class="form-group">
-                <label for="rule-pattern">Contém no Histórico</label>
-                <input id="rule-pattern" type="text" class="form-control" placeholder="Ex: PIX|TAR" />
-              </div>
-              <div class="form-group">
-                <label for="rule-account">Conta Destino</label>
-                <input id="rule-account" type="text" class="form-control" placeholder="Ex: Tarifas" />
-              </div>
-            </div>
-            <button id="add-rule" class="btn btn-primary w-full mt-4">Salvar Regra</button>
-            <div id="rules-list" class="tags-container mt-4"></div>
-          </div>
-        </section>
-      </div>
+  if (hasComma && hasDot) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // PT-BR: remove pontos de milhar, troca vírgula por ponto
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // EN: remove vírgulas de milhar
+      str = str.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    // Apenas vírgula: assume que é o separador decimal
+    str = str.replace(',', '.');
+  }
 
-      <section class="card card-full-width">
-        <div class="card-header header-with-controls">
-          <div class="header-title">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-            <h2>4. Transações Unificadas</h2>
-          </div>
-          <div class="table-controls">
-            <div class="search-box">
-               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-               <input id="search-transactions" type="search" class="form-control" placeholder="Buscar..." />
-            </div>
-            <select id="filter-status" class="form-control form-select">
-              <option value="all">Todas</option>
-              <option value="matched">Conciliadas</option>
-              <option value="pending">Pendentes</option>
-            </select>
-          </div>
-        </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table id="transactions-table" class="data-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Descrição</th>
-                  <th class="text-right">Débito</th>
-                  <th class="text-right">Crédito</th>
-                  <th class="text-right">Saldo</th>
-                  <th style="width: 250px;">Conta Contábil</th>
-                  <th class="text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+  return parseFloat(str) || 0;
+}
 
-      <section class="card">
-        <div class="card-header">
-           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8"/><path d="M9 7L4 20"/><path d="M15 7l5 13"/></svg>
-          <h2>5. Motor de Conciliação</h2>
-        </div>
-        <div class="card-body">
-          <div class="grid two-columns-sidebar-left align-end">
-             <div class="form-group">
-               <label class="file-upload-label display-block">
-                 <span>Carregar Razão Contábil (CSV)</span>
-                 <input id="ledger-input" type="file" class="form-control-file" />
-               </label>
-               <small class="hint">Data, Descrição, Valor, Conta</small>
-            </div>
-            
-            <div class="reconciliation-controls">
-               <div class="form-group">
-                  <label for="tolerance-days">Tolerância Dias</label>
-                  <input id="tolerance-days" type="number" min="0" value="2" class="form-control" />
-               </div>
-               <div class="form-group">
-                  <label for="tolerance-value">Tolerância Valor</label>
-                  <input id="tolerance-value" type="number" min="0" step="0.01" value="0.05" class="form-control" />
-               </div>
-                <button id="run-reconciliation" class="btn btn-success btn-lg">Conciliar Agora</button>
-            </div>
-          </div>
+function saveState() {
+  localStorage.setItem(storageKey, JSON.stringify(state));
+}
 
-           <div id="reconciliation-summary" class="banner banner-warning hidden mt-6"></div>
+function loadState() {
+  const raw = localStorage.getItem(storageKey);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    // Converte strings de data de volta para objetos Date
+    if (parsed.transactions) {
+      parsed.transactions.forEach(t => {
+        if (t.date) t.date = new Date(t.date);
+      });
+    }
+    if (parsed.ledgerEntries) {
+      parsed.ledgerEntries.forEach(e => {
+        if (e.date) e.date = new Date(e.date);
+      });
+    }
+    Object.assign(state, parsed);
+  } catch (error) {
+    console.error('Falha ao carregar estado', error);
+  }
+}
 
-          <div class="table-responsive mt-6">
-            <table id="reconciliation-table" class="data-table">
-              <thead>
-                <tr>
-                  <th>Banco</th>
-                  <th>Contabilidade</th>
-                  <th class="text-right">Diferença</th>
-                  <th class="text-center">Ação</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+function formatMoney(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '-';
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: state.currency || 'BRL',
+  }).format(value);
+}
 
-      <section class="card card-compact align-center">
-         <div class="card-header">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            <h2>Exportar Dados Finais</h2>
-         </div>
-        <div class="card-body actions-bar">
-          <button id="export-csv" class="btn btn-primary">Download CSV</button>
-          <button id="export-json" class="btn btn-outline">Download JSON</button>
-        </div>
-      </section>
+function parseDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const cleaned = value.toString().trim();
+  
+  // Formato OFX/ISO Compacto: YYYYMMDD
+  if (/^\d{8}/.test(cleaned)) {
+    const year = cleaned.slice(0, 4);
+    const month = cleaned.slice(4, 6);
+    const day = cleaned.slice(6, 8);
+    const parsed = new Date(`${year}-${month}-${day}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  
+  const parsed = new Date(cleaned);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-    </main>
+function parseCSV(content) {
+  const rows = [];
+  let current = '';
+  let inQuotes = false;
+  let values = [];
+  
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (char === '"') {
+      if (content[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (current || values.length) {
+        values.push(current);
+        rows.push(values);
+        values = [];
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+  if (current || values.length) {
+    values.push(current);
+    rows.push(values);
+  }
+  return rows.map(row => row.map(item => item.trim()));
+}
 
-    <footer class="app-footer">
-      <p>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Seus dados são processados localmente e salvos no navegador.
-      </p>
-    </footer>
-  </div>
+function parseOFX(content) {
+  const transactions = [];
+  const stmt = content.split('<STMTTRN>').slice(1);
+  stmt.forEach((block) => {
+    const getTag = (tag) => {
+      const match = block.match(new RegExp(`<${tag}>([^<\r\n]+)`));
+      return match ? match[1].trim() : '';
+    };
+    const date = parseDate(getTag('DTPOSTED'));
+    const amount = parseAmount(getTag('TRNAMT'), true);
+    const memo = getTag('MEMO') || getTag('NAME');
+    transactions.push({
+      date,
+      description: memo,
+      debit: amount < 0 ? Math.abs(amount) : 0,
+      credit: amount > 0 ? amount : 0,
+      balance: null,
+      raw: block,
+    });
+  });
+  return transactions;
+}
 
-  <template id="transaction-row-template">
-    <tr>
-      <td data-field="date" class="text-nowrap"></td>
-      <td data-field="description" class="text-truncate" style="max-width: 250px;"></td>
-      <td data-field="debit" class="text-right text-danger font-medium"></td>
-      <td data-field="credit" class="text-right text-success font-medium"></td>
-      <td data-field="balance" class="text-right font-medium"></td>
-      <td>
-        <input class="account-input form-control form-control-sm" type="text" placeholder="Classificar..." />
-      </td>
-      <td data-field="status" class="text-center"></td>
-    </tr>
-  </template>
+function normalizeTransactions(rows) {
+  if (!rows.length) return [];
+  const header = rows[0].map(cell => cell.toLowerCase());
+  const hasHeader = header.some(cell => ['data', 'date', 'descricao', 'historico', 'valor'].includes(cell));
+  const startIndex = hasHeader ? 1 : 0;
+  
+  const indexOf = (names) => header.findIndex(cell => names.includes(cell));
+  
+  const dateIdx = indexOf(['data', 'date']);
+  const descIdx = indexOf(['descricao', 'histórico', 'historico', 'memo']);
+  const debitIdx = indexOf(['debito', 'débito']);
+  const creditIdx = indexOf(['credito', 'crédito']);
+  const valueIdx = indexOf(['valor', 'amount']);
+  const balanceIdx = indexOf(['saldo', 'balance']);
 
-  <script src="app.js"></script>
-</body>
-</html>
+  return rows.slice(startIndex).filter(row => row.length > 1).map((row) => {
+    const date = parseDate(row[dateIdx >= 0 ? dateIdx : 0]);
+    const description = row[descIdx >= 0 ? descIdx : 1] || '';
+    
+    const debit = debitIdx >= 0 ? parseAmount(row[debitIdx]) : 0;
+    const credit = creditIdx >= 0 ? parseAmount(row[creditIdx]) : 0;
+    let value = valueIdx >= 0 ? parseAmount(row[valueIdx]) : 0;
+
+    if (value === 0 && (debit !== 0 || credit !== 0)) {
+      value = credit !== 0 ? credit : -debit;
+    }
+
+    return {
+      date,
+      description,
+      debit: debit || (value < 0 ? Math.abs(value) : 0),
+      credit: credit || (value > 0 ? value : 0),
+      balance: balanceIdx >= 0 ? parseAmount(row[balanceIdx]) : null,
+      raw: row,
+    };
+  });
+}
+
+function applyRules(transaction) {
+  for (const rule of state.rules) {
+    try {
+      const regex = new RegExp(rule.pattern, 'i');
+      if (regex.test(transaction.description)) {
+        return rule.account;
+      }
+    } catch (e) {
+      console.warn('Regra inválida:', rule.pattern);
+    }
+  }
+  return '';
+}
+
+function updateTransactions(newTransactions) {
+  const updated = newTransactions.map((item) => ({
+    ...item,
+    id: generateId(),
+    status: 'pending',
+    account: applyRules(item),
+  }));
+  state.transactions = state.transactions.concat(updated);
+  saveState();
+  renderTransactions();
+  renderSummary();
+}
+
+function renderSummary() {
+  const total = state.transactions.length;
+  const matched = state.transactions.filter(item => item.status === 'matched').length;
+  elements.importSummary.textContent = `Total de transações: ${total}. Conciliadas: ${matched}. Pendentes: ${total - matched}.`;
+}
+
+function renderTransactions() {
+  elements.transactionsTable.innerHTML = '';
+  const term = elements.searchTransactions.value.toLowerCase();
+  const filter = elements.filterStatus.value;
+  
+  const filtered = state.transactions.filter((item) => {
+    const text = `${item.description} ${item.account}`.toLowerCase();
+    const matchesTerm = text.includes(term);
+    const matchesStatus = filter === 'all' || item.status === filter;
+    return matchesTerm && matchesStatus;
+  });
+
+  const template = document.querySelector('#transaction-row-template');
+  filtered.forEach((transaction) => {
+    const row = template.content.cloneNode(true);
+    const tr = row.querySelector('tr');
+    
+    row.querySelector('[data-field="date"]').textContent = transaction.date ? transaction.date.toLocaleDateString('pt-BR') : '-';
+    row.querySelector('[data-field="description"]').textContent = transaction.description || '-';
+    row.querySelector('[data-field="debit"]').textContent = transaction.debit ? formatMoney(transaction.debit) : '-';
+    row.querySelector('[data-field="credit"]').textContent = transaction.credit ? formatMoney(transaction.credit) : '-';
+    row.querySelector('[data-field="balance"]').textContent = transaction.balance ? formatMoney(transaction.balance) : '-';
+    
+    const statusCell = row.querySelector('[data-field="status"]');
+    statusCell.innerHTML = transaction.status === 'matched'
+      ? '<span class="status-pill status-matched">Conciliado</span>'
+      : '<span class="status-pill status-pending">Pendente</span>';
+
+    const accountInput = row.querySelector('.account-input');
+    accountInput.value = transaction.account || '';
+    
+    accountInput.addEventListener('change', (event) => {
+      transaction.account = event.target.value;
+      transaction.status = transaction.account ? 'matched' : 'pending';
+      if (transaction.account && transaction.description) {
+        learnRule(transaction.description, transaction.account);
+      }
+      saveState();
+      renderTransactions();
+      renderSummary();
+    });
+    
+    elements.transactionsTable.appendChild(row);
+  });
+}
+
+function renderAccounts() {
+  elements.accountsList.innerHTML = '';
+  state.accounts.forEach((account, index) => {
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = account;
+    const remove = document.createElement('button');
+    remove.textContent = '×';
+    remove.onclick = () => {
+      state.accounts.splice(index, 1);
+      saveState();
+      renderAccounts();
+    };
+    tag.appendChild(remove);
+    elements.accountsList.appendChild(tag);
+  });
+}
+
+function learnRule(description, account) {
+  const existing = state.rules.find(r => r.pattern === description);
+  if (existing) return;
+  
+  const pattern = description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  state.rules.unshift({ pattern, account, createdAt: new Date().toISOString() });
+  saveState();
+  renderRules();
+}
+
+function renderRules() {
+  elements.rulesList.innerHTML = '';
+  state.rules.forEach((rule, index) => {
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = `${rule.pattern} → ${rule.account}`;
+    const remove = document.createElement('button');
+    remove.textContent = '×';
+    remove.onclick = () => {
+      state.rules.splice(index, 1);
+      saveState();
+      renderRules();
+    };
+    tag.appendChild(remove);
+    elements.rulesList.appendChild(tag);
+  });
+}
+
+function parseFiles(files) {
+  const tasks = Array.from(files).map(file => file.text().then(content => ({ file, content })));
+  Promise.all(tasks).then(results => {
+    const parsed = [];
+    results.forEach(({ file, content }) => {
+      const name = file.name.toLowerCase();
+      if (name.endsWith('.ofx')) {
+        parsed.push(...parseOFX(content));
+      } else if (name.endsWith('.json')) {
+        try {
+          const data = JSON.parse(content);
+          const list = Array.isArray(data) ? data : [data];
+          parsed.push(...list.map(item => ({
+            date: parseDate(item.date || item.data),
+            description: item.description || item.historico,
+            debit: parseAmount(item.debit),
+            credit: parseAmount(item.credit),
+            balance: parseAmount(item.balance),
+          })));
+        } catch (e) { console.error("Erro JSON:", e); }
+      } else {
+        parsed.push(...normalizeTransactions(parseCSV(content)));
+      }
+    });
+    updateTransactions(parsed);
+  });
+}
+
+function handleAccountsImport(file) {
+  if (!file) return;
+  file.text().then(content => {
+    const rows = parseCSV(content);
+    rows.slice(1).forEach(row => {
+      if (row[0] && row[1]) state.accounts.push(`${row[0]} - ${row[1]}`);
+    });
+    state.accounts = [...new Set(state.accounts)]; // Remove duplicados
+    saveState();
+    renderAccounts();
+  });
+}
+
+function reconcile() {
+  const days = parseInt(elements.toleranceDays.value, 10) || 0;
+  const valTol = parseFloat(elements.toleranceValue.value) || 0;
+  const matches = [];
+  const remainingLedger = [...state.ledgerEntries];
+
+  state.transactions.forEach(bankEntry => {
+    if (bankEntry.status === 'matched') return;
+    
+    const bankVal = bankEntry.credit - bankEntry.debit;
+    let matchIdx = -1;
+    let minDiff = Infinity;
+
+    remainingLedger.forEach((ledger, idx) => {
+      const diffDays = bankEntry.date && ledger.date ? 
+        Math.abs((bankEntry.date - ledger.date) / 86400000) : 999;
+      const diffVal = Math.abs(bankVal - ledger.value);
+
+      if (diffDays <= days && diffVal <= valTol && diffVal < minDiff) {
+        matchIdx = idx;
+        minDiff = diffVal;
+      }
+    });
+
+    if (matchIdx >= 0) {
+      const ledger = remainingLedger.splice(matchIdx, 1)[0];
+      bankEntry.status = 'matched';
+      bankEntry.account = ledger.account;
+      matches.push({ bankEntry, ledger, diff: minDiff });
+    }
+  });
+
+  saveState();
+  renderTransactions();
+  renderSummary();
+  renderReconciliation(matches, remainingLedger);
+}
+
+function renderReconciliation(matches, remaining) {
+  elements.reconciliationTable.innerHTML = '';
+  matches.forEach(m => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${m.bankEntry.description} (${formatMoney(m.bankEntry.credit - m.bankEntry.debit)})</td>
+      <td>${m.ledger.description} (${formatMoney(m.ledger.value)})</td>
+      <td>${formatMoney(m.diff)}</td>
+      <td><button class="secondary" onclick="this.closest('tr').remove()">Ok</button></td>
+    `;
+    elements.reconciliationTable.appendChild(row);
+  });
+  elements.reconciliationSummary.textContent = `Conciliados: ${matches.length}. Pendentes: ${remaining.length}.`;
+}
+
+function handleLedgerImport(file) {
+  if (!file) return;
+  file.text().then(content => {
+    const rows = parseCSV(content);
+    state.ledgerEntries = rows.slice(1).map(row => ({
+      date: parseDate(row[0]),
+      description: row[1],
+      value: parseAmount(row[2]),
+      account: row[3],
+    })).filter(e => e.description);
+    saveState();
+  });
+}
+
+function exportData(type) {
+  const data = state.transactions.map(t => ({
+    ...t,
+    date: t.date ? t.date.toISOString().split('T')[0] : ''
+  }));
+  
+  if (type === 'json') {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'extrato-unificado.json'; a.click();
+  } else {
+    const csv = 'data,descricao,debito,credito,conta,status\n' + 
+      data.map(t => `${t.date},"${t.description}",${t.debit},${t.credit},"${t.account}",${t.status}`).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'extrato-unificado.csv'; a.click();
+  }
+}
+
+function init() {
+  loadState();
+  renderAccounts();
+  renderRules();
+  renderTransactions();
+  renderSummary();
+
+  elements.parseFiles.onclick = () => {
+    if (elements.fileInput.files.length) {
+      state.currency = elements.currency.value;
+      parseFiles(elements.fileInput.files);
+    }
+  };
+
+  elements.addAccount.onclick = () => {
+    const val = elements.newAccount.value.trim();
+    if (val) {
+      state.accounts.push(val);
+      elements.newAccount.value = '';
+      saveState(); renderAccounts();
+    }
+  };
+
+  elements.addRule.onclick = () => {
+    const p = elements.rulePattern.value.trim();
+    const a = elements.ruleAccount.value.trim();
+    if (p && a) {
+      state.rules.unshift({ pattern: p, account: a });
+      saveState(); renderRules();
+      elements.rulePattern.value = ''; elements.ruleAccount.value = '';
+    }
+  };
+
+  elements.resetData.onclick = () => {
+    if(confirm("Limpar todos os dados?")) {
+      localStorage.removeItem(storageKey);
+      location.reload();
+    }
+  };
+
+  elements.runReconciliation.onclick = reconcile;
+  elements.searchTransactions.oninput = renderTransactions;
+  elements.filterStatus.onchange = renderTransactions;
+  elements.exportCsv.onclick = () => exportData('csv');
+  elements.exportJson.onclick = () => exportData('json');
+  elements.accountsFile.onchange = e => handleAccountsImport(e.target.files[0]);
+  elements.ledgerInput.onchange = e => handleLedgerImport(e.target.files[0]);
+}
+
+init();
