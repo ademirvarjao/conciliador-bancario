@@ -1,6 +1,6 @@
 /**
- * CONCILIADOR BANCÁRIO v0.6 - Stylesheet
- * Layout tradicional e otimizado
+ * CONCILIADOR BANCÁRIO v0.7 - Stylesheet
+ * Layout tradicional e otimizado com suporte a PDF/OCR
  */
 
 :root {
@@ -247,6 +247,83 @@ h1 {
 .upload-zone small {
   font-size: 0.8rem;
   color: var(--gray-500);
+}
+
+/* OCR TOGGLE */
+.ocr-toggle-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  background: var(--info-bg);
+  border: 1px solid #93c5fd;
+  border-radius: var(--radius);
+}
+
+.ocr-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ocr-label strong {
+  font-size: 0.875rem;
+  color: var(--gray-800);
+}
+
+.ocr-label small {
+  font-size: 0.75rem;
+  color: var(--gray-600);
+  line-height: 1.4;
+}
+
+/* Switch Toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--gray-300);
+  transition: var(--transition);
+  border-radius: 26px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: var(--transition);
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: var(--primary);
+}
+
+input:checked + .slider:before {
+  transform: translateX(22px);
 }
 
 .metadata-fields {
@@ -702,6 +779,11 @@ textarea.form-control {
     left: 12px;
     right: 12px;
     max-width: none;
+  }
+  
+  .ocr-toggle-wrapper {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
