@@ -1,19 +1,19 @@
 /**
- * CONCILIADOR BANCÁRIO v0.5
+ * CONCILIADOR BANCÁRIO v0.6
  * 
  * @description Ferramenta open source de conciliação bancária automática
  * @author Ademir Varjão
  * @license MIT
- * @version 0.5.0
+ * @version 0.6.0
  * @year 2026
  * 
- * Funcionalidades v0.5:
- * - Matching inteligente com tolerância configurável
- * - Validação robusta de dados
- * - Ações em lote otimizadas
- * - Performance para grandes volumes
- * - Sistema de regras automáticas aprimorado
- * - Dashboard com métricas em tempo real
+ * Novidades v0.6:
+ * - Layout tradicional e limpo
+ * - Correções de bugs críticos
+ * - Sistema de notificações toast
+ * - Suporte a múltiplas moedas
+ * - Performance otimizada
+ * - Melhor tratamento de erros
  */
 
 'use strict';
@@ -31,7 +31,7 @@ const state = {
   bank: '',
   pdfNotes: '',
   currency: 'BRL',
-  version: '0.5.0',
+  version: '0.6.0',
   lastUpdate: null
 };
 
@@ -83,7 +83,8 @@ const elements = {
   statCredits: $('#stat-credits'),
   statDebits: $('#stat-debits'),
   statBalance: $('#stat-balance'),
-  statReconciled: $('#stat-reconciled-pct')
+  statReconciled: $('#stat-reconciled-pct'),
+  currencySelect: $('#currency-select')
 };
 
 // ============================================
@@ -100,13 +101,56 @@ const formatCurrency = (val) => {
 };
 
 const formatDate = (date) => {
-  if (!date || !(date instanceof Date)) return '-';
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('pt-BR');
 };
 
 const formatPercent = (val) => {
   return `${Math.round(val * 100)}%`;
 };
+
+// ============================================
+// SISTEMA DE NOTIFICAÇÕES TOAST
+// ============================================
+
+function showNotification(message, type = 'info') {
+  const container = $('#toast-container') || createToastContainer();
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  
+  const icons = {
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    info: 'ℹ️'
+  };
+  
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || icons.info}</span>
+    <span class="toast-message">${message}</span>
+  `;
+  
+  container.appendChild(toast);
+  
+  // Animação de entrada
+  setTimeout(() => toast.classList.add('toast-show'), 10);
+  
+  // Auto-remover após 4 segundos
+  setTimeout(() => {
+    toast.classList.remove('toast-show');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+  
+  console.log(`[${type.toUpperCase()}]`, message);
+}
+
+function createToastContainer() {
+  const container = document.createElement('div');
+  container.id = 'toast-container';
+  document.body.appendChild(container);
+  return container;
+}
 
 // ============================================
 // PARSERS E CONVERSORES
@@ -123,14 +167,13 @@ function parseAmount(value, isOFX = false) {
   }
   
   // Remove símbolos monetários
-  str = str.replace(/[R$\u20ac\xa3\xa5]/g, '');
+  str = str.replace(/[R$\u20ac\xa3\xa5USD]/gi, '');
   
   // Detecta formato BR vs EN
   const hasComma = str.includes(',');
   const hasDot = str.includes('.');
   
   if (hasComma && hasDot) {
-    // Tem ambos - verifica qual é o separador decimal
     const lastComma = str.lastIndexOf(',');
     const lastDot = str.lastIndexOf('.');
     
@@ -196,7 +239,7 @@ const validators = {
     if (!t) return false;
     if (!t.description || t.description.trim() === '') return false;
     if (typeof t.amount !== 'number' || isNaN(t.amount)) return false;
-    if (!t.date || !(t.date instanceof Date)) return false;
+    if (!t.date || !(t.date instanceof Date) || isNaN(t.date.getTime())) return false;
     return true;
   },
   
@@ -304,27 +347,36 @@ function parseCSV(content) {
 
 function parseOFX(content) {
   const transactions = [];
-  const blocks = content.split('<STMTTRN>').slice(1);
   
-  blocks.forEach(block => {
-    const getTag = (tag) => {
-      const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]+)`));
-      return match ? match[1].trim() : '';
-    };
+  try {
+    const blocks = content.split('<STMTTRN>').slice(1);
     
-    const date = parseDate(getTag('DTPOSTED'));
-    const amount = parseAmount(getTag('TRNAMT'), true);
-    const description = getTag('MEMO') || getTag('NAME') || 'Sem descrição';
-    
-    if (date && !isNaN(amount)) {
-      transactions.push({
-        date,
-        description: validators.sanitizeString(description),
-        amount,
-        status: 'pending'
-      });
-    }
-  });
+    blocks.forEach(block => {
+      const getTag = (tag) => {
+        const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]+)`));
+        return match ? match[1].trim() : '';
+      };
+      
+      const dateStr = getTag('DTPOSTED');
+      const amountStr = getTag('TRNAMT');
+      const description = getTag('MEMO') || getTag('NAME') || 'Sem descrição';
+      
+      const date = parseDate(dateStr);
+      const amount = parseAmount(amountStr, true);
+      
+      if (date && !isNaN(amount)) {
+        transactions.push({
+          date,
+          description: validators.sanitizeString(description),
+          amount,
+          status: 'pending'
+        });
+      }
+    });
+  } catch (e) {
+    console.error('Erro ao parsear OFX:', e);
+    showNotification('Erro ao processar arquivo OFX', 'error');
+  }
   
   return transactions;
 }
@@ -383,7 +435,12 @@ async function processUploadedFiles(files) {
         try {
           const data = JSON.parse(text);
           if (Array.isArray(data)) {
-            allNew.push(...data.filter(validators.isValidTransaction));
+            data.forEach(item => {
+              if (item.date) item.date = new Date(item.date);
+              if (validators.isValidTransaction(item)) {
+                allNew.push(item);
+              }
+            });
           }
         } catch (e) {
           errors.push(`${file.name}: JSON inválido`);
@@ -394,36 +451,43 @@ async function processUploadedFiles(files) {
     // Adiciona IDs únicos e sugere contas
     const withMetadata = allNew.map(t => ({
       ...t,
-      id: crypto.randomUUID(),
-      account: suggestAccount(t),
+      id: t.id || crypto.randomUUID(),
+      account: t.account || suggestAccount(t),
+      status: t.status || 'pending',
       importedAt: new Date().toISOString()
     }));
     
-    // Previne duplicatas (mesma data, descrição e valor)
+    // Previne duplicatas mais robusta
     const existing = new Set(
-      state.transactions.map(t => `${t.date?.toISOString()}|${t.description}|${t.amount}`)
+      state.transactions.map(t => {
+        const dateStr = t.date?.toISOString().split('T')[0] || '';
+        return `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
+      })
     );
     
     const uniqueNew = withMetadata.filter(t => {
-      const key = `${t.date?.toISOString()}|${t.description}|${t.amount}`;
+      const dateStr = t.date?.toISOString().split('T')[0] || '';
+      const key = `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
       return !existing.has(key);
     });
     
     state.transactions.push(...uniqueNew);
     
     // Ordena por data (mais recente primeiro)
-    state.transactions.sort((a, b) => b.date - a.date);
+    state.transactions.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
     
     saveState();
     renderTransactions();
     
     // Notificação de sucesso
-    const msg = `✅ ${uniqueNew.length} transações importadas com sucesso!`;
     const duplicates = allNew.length - uniqueNew.length;
-    const fullMsg = duplicates > 0 ? `${msg} (${duplicates} duplicatas ignoradas)` : msg;
+    let msg = `✅ ${uniqueNew.length} transação(ões) importada(s) com sucesso!`;
+    if (duplicates > 0) {
+      msg += ` (${duplicates} duplicata(s) ignorada(s))`;
+    }
     
-    showNotification(fullMsg, 'success');
-    elements.importSummary.textContent = fullMsg;
+    showNotification(msg, 'success');
+    elements.importSummary.textContent = msg;
     elements.importSummary.classList.remove('hidden');
     
     if (errors.length > 0) {
@@ -437,7 +501,7 @@ async function processUploadedFiles(files) {
   } finally {
     elements.parseFiles.disabled = false;
     elements.parseFiles.textContent = 'Processar Arquivos';
-    elements.fileInput.value = ''; // Limpa input
+    if (elements.fileInput) elements.fileInput.value = '';
   }
 }
 
@@ -460,13 +524,23 @@ function suggestAccount(transaction) {
     }
   });
   
-  if (exactMatch) return exactMatch.account;
+  if (exactMatch) {
+    // Incrementa contador de uso
+    exactMatch.usageCount = (exactMatch.usageCount || 0) + 1;
+    autoSave();
+    return exactMatch.account;
+  }
   
   // Busca parcial (fallback)
   const partialMatch = state.rules.find(r => {
     const pattern = r.pattern.toLowerCase();
     return desc.includes(pattern) || pattern.includes(desc);
   });
+  
+  if (partialMatch) {
+    partialMatch.usageCount = (partialMatch.usageCount || 0) + 1;
+    autoSave();
+  }
   
   return partialMatch ? partialMatch.account : '';
 }
@@ -475,14 +549,22 @@ function createRule(description, account) {
   if (!description || !account) return;
   
   // Evita duplicatas
-  const exists = state.rules.some(r => r.pattern === description && r.account === account);
-  if (exists) return;
+  const exists = state.rules.find(r => 
+    r.pattern.toLowerCase() === description.toLowerCase() && 
+    r.account === account
+  );
+  
+  if (exists) {
+    exists.usageCount = (exists.usageCount || 0) + 1;
+    autoSave();
+    return;
+  }
   
   state.rules.push({
     pattern: description,
     account: account,
     createdAt: new Date().toISOString(),
-    usageCount: 0
+    usageCount: 1
   });
   
   autoSave();
@@ -526,11 +608,13 @@ function calculateMetrics() {
 function renderDashboard() {
   const metrics = calculateMetrics();
   
-  elements.statCredits.textContent = formatCurrency(metrics.credits);
-  elements.statDebits.textContent = formatCurrency(metrics.debits);
-  elements.statBalance.textContent = formatCurrency(metrics.balance);
-  elements.statBalance.className = metrics.balance >= 0 ? 'stat-value text-success' : 'stat-value text-danger';
-  elements.statReconciled.textContent = formatPercent(metrics.reconciledPct);
+  if (elements.statCredits) elements.statCredits.textContent = formatCurrency(metrics.credits);
+  if (elements.statDebits) elements.statDebits.textContent = formatCurrency(metrics.debits);
+  if (elements.statBalance) {
+    elements.statBalance.textContent = formatCurrency(metrics.balance);
+    elements.statBalance.className = metrics.balance >= 0 ? 'stat-value text-success' : 'stat-value text-danger';
+  }
+  if (elements.statReconciled) elements.statReconciled.textContent = formatPercent(metrics.reconciledPct);
 }
 
 // ============================================
@@ -538,8 +622,10 @@ function renderDashboard() {
 // ============================================
 
 function renderTransactions() {
-  const term = elements.searchTransactions.value.toLowerCase();
-  const filter = elements.filterStatus.value;
+  if (!elements.transactionsTable) return;
+  
+  const term = elements.searchTransactions?.value.toLowerCase() || '';
+  const filter = elements.filterStatus?.value || 'all';
   
   const filtered = state.transactions.filter(t => {
     const matchesTerm = !term || 
@@ -559,42 +645,55 @@ function renderTransactions() {
   }
   
   const template = $('#transaction-row-template');
+  if (!template) return;
+  
   const fragment = document.createDocumentFragment();
   
   filtered.forEach(t => {
     const row = template.content.cloneNode(true);
     const tr = row.querySelector('tr');
-    tr.dataset.id = t.id;
+    if (tr) tr.dataset.id = t.id;
     
-    row.querySelector('[data-field="date"]').textContent = formatDate(t.date);
-    row.querySelector('[data-field="description"]').textContent = t.description;
-    row.querySelector('[data-field="description"]').title = t.description; // Tooltip
+    const dateEl = row.querySelector('[data-field="date"]');
+    if (dateEl) dateEl.textContent = formatDate(t.date);
+    
+    const descEl = row.querySelector('[data-field="description"]');
+    if (descEl) {
+      descEl.textContent = t.description;
+      descEl.title = t.description;
+    }
     
     const amtEl = row.querySelector('[data-field="amount"]');
-    amtEl.textContent = formatCurrency(t.amount);
-    amtEl.className = `text-right font-medium ${t.amount >= 0 ? 'text-success' : 'text-danger'}`;
+    if (amtEl) {
+      amtEl.textContent = formatCurrency(t.amount);
+      amtEl.className = `text-right font-medium ${t.amount >= 0 ? 'text-success' : 'text-danger'}`;
+    }
     
     const picker = row.querySelector('.account-picker');
-    picker.innerHTML = `<option value="">Selecionar...</option>` + 
-      state.accounts.map(acc => 
-        `<option value="${acc}" ${t.account === acc ? 'selected' : ''}>${acc}</option>`
-      ).join('');
-    
-    picker.onchange = (e) => {
-      const oldAccount = t.account;
-      t.account = e.target.value;
+    if (picker) {
+      picker.innerHTML = `<option value="">Selecionar...</option>` + 
+        state.accounts.map(acc => 
+          `<option value="${acc}" ${t.account === acc ? 'selected' : ''}>${acc}</option>`
+        ).join('');
       
-      // Cria regra automática
-      if (t.account && oldAccount !== t.account) {
-        createRule(t.description, t.account);
-      }
-      
-      autoSave();
-    };
+      picker.onchange = (e) => {
+        const oldAccount = t.account;
+        t.account = e.target.value;
+        
+        // Cria regra automática
+        if (t.account && oldAccount !== t.account) {
+          createRule(t.description, t.account);
+        }
+        
+        autoSave();
+      };
+    }
     
     const statusEl = row.querySelector('[data-field="status"]');
-    statusEl.textContent = t.status === 'matched' ? '✅ Conciliado' : '⌛ Pendente';
-    statusEl.className = `status-badge status-${t.status}`;
+    if (statusEl) {
+      statusEl.textContent = t.status === 'matched' ? '✅ Conciliado' : '⌛ Pendente';
+      statusEl.className = `status-badge status-${t.status}`;
+    }
     
     fragment.appendChild(row);
   });
@@ -610,11 +709,13 @@ function renderTransactions() {
 function getSelectedTransactions() {
   return Array.from($$('.row-checkbox:checked')).map(cb => {
     const tr = cb.closest('tr');
-    return state.transactions.find(t => t.id === tr.dataset.id);
+    return state.transactions.find(t => t.id === tr?.dataset.id);
   }).filter(Boolean);
 }
 
 function updateBulkToolbar() {
+  if (!elements.bulkActions || !elements.selectedCount) return;
+  
   const selected = getSelectedTransactions();
   const count = selected.length;
   
@@ -636,8 +737,8 @@ function handleBulkAccount(accountName) {
   showNotification(`✅ Conta "${accountName}" aplicada a ${selected.length} transações`, 'success');
   
   // Reseta seleção
-  elements.selectAll.checked = false;
-  elements.bulkAccount.value = '';
+  if (elements.selectAll) elements.selectAll.checked = false;
+  if (elements.bulkAccount) elements.bulkAccount.value = '';
 }
 
 function handleBulkDelete() {
@@ -654,11 +755,11 @@ function handleBulkDelete() {
   renderTransactions();
   showNotification(`🗑️ ${selected.length} transação(ões) excluída(s)`, 'success');
   
-  elements.selectAll.checked = false;
+  if (elements.selectAll) elements.selectAll.checked = false;
 }
 
 // ============================================
-// CONCILIAÇÃO (MATCHING)
+// CONCILIAÇÃO (MATCHING) - CORRIGIDA
 // ============================================
 
 function calculateSimilarity(str1, str2) {
@@ -670,17 +771,35 @@ function calculateSimilarity(str1, str2) {
   if (s1 === s2) return 1;
   if (s1.includes(s2) || s2.includes(s1)) return 0.8;
   
-  // Levenshtein distance simplificado
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
+  // Algoritmo de Levenshtein corrigido
+  const matrix = [];
   
-  if (longer.length === 0) return 1.0;
+  for (let i = 0; i <= s2.length; i++) {
+    matrix[i] = [i];
+  }
   
-  const editDistance = longer.split('').reduce((acc, char, i) => {
-    return acc + (shorter[i] !== char ? 1 : 0);
-  }, 0);
+  for (let j = 0; j <= s1.length; j++) {
+    matrix[0][j] = j;
+  }
   
-  return (longer.length - editDistance) / longer.length;
+  for (let i = 1; i <= s2.length; i++) {
+    for (let j = 1; j <= s1.length; j++) {
+      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substituição
+          matrix[i][j - 1] + 1,     // inserção
+          matrix[i - 1][j] + 1      // deleção
+        );
+      }
+    }
+  }
+  
+  const maxLen = Math.max(s1.length, s2.length);
+  const distance = matrix[s2.length][s1.length];
+  
+  return maxLen === 0 ? 1 : (maxLen - distance) / maxLen;
 }
 
 function runMatching() {
@@ -689,8 +808,10 @@ function runMatching() {
     return;
   }
   
-  const daysTol = parseInt(elements.toleranceDays.value) || CONFIG.defaultToleranceDays;
-  const valTol = parseFloat(elements.toleranceValue.value) || CONFIG.defaultToleranceValue;
+  if (!elements.runReconciliation) return;
+  
+  const daysTol = parseInt(elements.toleranceDays?.value) || CONFIG.defaultToleranceDays;
+  const valTol = parseFloat(elements.toleranceValue?.value) || CONFIG.defaultToleranceValue;
   
   elements.runReconciliation.disabled = true;
   elements.runReconciliation.textContent = 'Processando...';
@@ -706,7 +827,7 @@ function runMatching() {
       let bestScore = 0;
       
       state.ledgerEntries.forEach(ledger => {
-        if (ledger.matched) return; // Já foi conciliado
+        if (ledger.matched) return;
         
         // 1. Verifica diferença de data
         const diffDays = Math.abs((bank.date - ledger.date) / 86400000);
@@ -718,7 +839,7 @@ function runMatching() {
         
         // 3. Calcula score de similaridade
         const dateSimilarity = 1 - (diffDays / daysTol);
-        const valueSimilarity = 1 - (diffVal / valTol);
+        const valueSimilarity = 1 - (diffVal / (valTol || 0.01));
         const descSimilarity = calculateSimilarity(bank.description, ledger.description || '');
         
         const score = (dateSimilarity * 0.3) + (valueSimilarity * 0.5) + (descSimilarity * 0.2);
@@ -743,12 +864,14 @@ function runMatching() {
     saveState();
     renderTransactions();
     
-    const msg = `🎯 ${matchCount} conciliação(ões) automática(s) realizada(s) com sucesso!`;
+    const msg = `🎯 ${matchCount} conciliação(ões) automática(s) realizada(s)!`;
     showNotification(msg, 'success');
     
-    elements.reconciliationSummary.textContent = msg;
-    elements.reconciliationSummary.className = 'alert alert-success mt-2';
-    elements.reconciliationSummary.classList.remove('hidden');
+    if (elements.reconciliationSummary) {
+      elements.reconciliationSummary.textContent = msg;
+      elements.reconciliationSummary.className = 'alert alert-success mt-2';
+      elements.reconciliationSummary.classList.remove('hidden');
+    }
     
     console.log('Matches encontrados:', matches);
     
@@ -795,7 +918,7 @@ async function loadLedgerFile(file) {
     });
     
     showNotification(`📊 ${state.ledgerEntries.length} lançamentos carregados do razão`, 'success');
-    elements.runReconciliation.disabled = false;
+    if (elements.runReconciliation) elements.runReconciliation.disabled = false;
     
   } catch (e) {
     console.error('Erro ao carregar razão:', e);
@@ -840,6 +963,7 @@ function exportToJSON() {
     exportDate: new Date().toISOString(),
     company: state.company,
     bank: state.bank,
+    currency: state.currency,
     transactions: state.transactions,
     accounts: state.accounts,
     rules: state.rules,
@@ -927,41 +1051,41 @@ async function importAccountsFromCSV(file) {
 
 function updateUI() {
   // Campos de metadados
-  elements.companyName.value = state.company || '';
-  elements.bankName.value = state.bank || '';
-  elements.pdfNotes.value = state.pdfNotes || '';
+  if (elements.companyName) elements.companyName.value = state.company || '';
+  if (elements.bankName) elements.bankName.value = state.bank || '';
+  if (elements.pdfNotes) elements.pdfNotes.value = state.pdfNotes || '';
+  if (elements.currencySelect) elements.currencySelect.value = state.currency || 'BRL';
   
   // Lista de contas
-  elements.accountsList.innerHTML = state.accounts.length === 0
-    ? '<p style="color: #94a3b8; text-align: center; padding: 20px;">Nenhuma conta cadastrada</p>'
-    : state.accounts.map(acc => 
-        `<span class="tag">${acc} <button onclick="removeAccount('${acc}')" title="Remover conta">&times;</button></span>`
-      ).join('');
+  if (elements.accountsList) {
+    elements.accountsList.innerHTML = state.accounts.length === 0
+      ? '<p style="color: #94a3b8; text-align: center; padding: 20px;">Nenhuma conta cadastrada</p>'
+      : state.accounts.map(acc => 
+          `<span class="tag">${acc} <button onclick="removeAccount('${acc.replace(/'/g, "\\'")}')")" title="Remover conta">&times;</button></span>`
+        ).join('');
+  }
   
   // Dropdown de contas para bulk actions
-  elements.bulkAccount.innerHTML = `<option value="">Aplicar Conta...</option>` + 
-    state.accounts.map(acc => `<option value="${acc}">${acc}</option>`).join('');
+  if (elements.bulkAccount) {
+    elements.bulkAccount.innerHTML = `<option value="">Aplicar Conta...</option>` + 
+      state.accounts.map(acc => `<option value="${acc}">${acc}</option>`).join('');
+  }
   
   renderTransactions();
   renderDashboard();
 }
 
-function showNotification(message, type = 'info') {
-  // Sistema simples de notificação (pode ser expandido)
-  console.log(`[${type.toUpperCase()}]`, message);
-  
-  // TODO: Implementar toast notifications
-}
-
 // ============================================
-// DRAG AND DROP
+// DRAG AND DROP - CORRIGIDO
 // ============================================
 
 function setupDragAndDrop() {
   const dropZone = elements.dropZone;
+  if (!dropZone) return;
   
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
     dropZone.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
   });
   
   function preventDefaults(e) {
@@ -982,9 +1106,17 @@ function setupDragAndDrop() {
   });
   
   dropZone.addEventListener('drop', (e) => {
-    const files = e.dataTransfer.files;
-    elements.fileInput.files = files;
-    processUploadedFiles(files);
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length > 0) {
+      processUploadedFiles(files);
+    }
+  });
+  
+  // Permite click no label
+  dropZone.addEventListener('click', () => {
+    if (elements.fileInput) elements.fileInput.click();
   });
 }
 
@@ -994,117 +1126,167 @@ function setupDragAndDrop() {
 
 function setupEventListeners() {
   // Upload e processamento
-  elements.fileInput.addEventListener('change', (e) => {
-    processUploadedFiles(e.target.files);
-  });
+  if (elements.fileInput) {
+    elements.fileInput.addEventListener('change', (e) => {
+      processUploadedFiles(e.target.files);
+    });
+  }
   
-  elements.parseFiles.addEventListener('click', () => {
-    if (elements.fileInput.files.length > 0) {
-      processUploadedFiles(elements.fileInput.files);
-    } else {
-      elements.fileInput.click();
-    }
-  });
+  if (elements.parseFiles) {
+    elements.parseFiles.addEventListener('click', () => {
+      if (elements.fileInput && elements.fileInput.files.length > 0) {
+        processUploadedFiles(elements.fileInput.files);
+      } else if (elements.fileInput) {
+        elements.fileInput.click();
+      }
+    });
+  }
   
   // Contas
-  elements.addAccount.addEventListener('click', () => {
-    const val = elements.newAccount.value.trim();
-    if (val) {
-      addAccount(val);
-      elements.newAccount.value = '';
-    }
-  });
+  if (elements.addAccount && elements.newAccount) {
+    elements.addAccount.addEventListener('click', () => {
+      const val = elements.newAccount.value.trim();
+      if (val) {
+        addAccount(val);
+        elements.newAccount.value = '';
+      }
+    });
+    
+    elements.newAccount.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        elements.addAccount.click();
+      }
+    });
+  }
   
-  elements.newAccount.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      elements.addAccount.click();
-    }
-  });
-  
-  elements.accountsFile.addEventListener('change', (e) => {
-    if (e.target.files[0]) {
-      importAccountsFromCSV(e.target.files[0]);
-      e.target.value = '';
-    }
-  });
+  if (elements.accountsFile) {
+    elements.accountsFile.addEventListener('change', (e) => {
+      if (e.target.files[0]) {
+        importAccountsFromCSV(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+  }
   
   // Busca e filtros
-  elements.searchTransactions.addEventListener('input', debounce(renderTransactions, 300));
-  elements.filterStatus.addEventListener('change', renderTransactions);
+  if (elements.searchTransactions) {
+    elements.searchTransactions.addEventListener('input', debounce(renderTransactions, 300));
+  }
+  
+  if (elements.filterStatus) {
+    elements.filterStatus.addEventListener('change', renderTransactions);
+  }
   
   // Seleção em lote
-  elements.selectAll.addEventListener('change', (e) => {
-    $$('.row-checkbox').forEach(cb => {
-      cb.checked = e.target.checked;
-    });
-    updateBulkToolbar();
-  });
-  
-  elements.transactionsTable.addEventListener('change', (e) => {
-    if (e.target.classList.contains('row-checkbox')) {
+  if (elements.selectAll) {
+    elements.selectAll.addEventListener('change', (e) => {
+      $$('.row-checkbox').forEach(cb => {
+        cb.checked = e.target.checked;
+      });
       updateBulkToolbar();
-    }
-  });
+    });
+  }
   
-  elements.bulkAccount.addEventListener('change', (e) => {
-    if (e.target.value) {
-      handleBulkAccount(e.target.value);
-    }
-  });
+  if (elements.transactionsTable) {
+    elements.transactionsTable.addEventListener('change', (e) => {
+      if (e.target.classList.contains('row-checkbox')) {
+        updateBulkToolbar();
+      }
+    });
+  }
   
-  elements.bulkDelete.addEventListener('click', handleBulkDelete);
+  if (elements.bulkAccount) {
+    elements.bulkAccount.addEventListener('change', (e) => {
+      if (e.target.value) {
+        handleBulkAccount(e.target.value);
+      }
+    });
+  }
+  
+  if (elements.bulkDelete) {
+    elements.bulkDelete.addEventListener('click', handleBulkDelete);
+  }
   
   // Conciliação
-  elements.ledgerInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) {
-      loadLedgerFile(e.target.files[0]);
-    }
-  });
+  if (elements.ledgerInput) {
+    elements.ledgerInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) {
+        loadLedgerFile(e.target.files[0]);
+      }
+    });
+  }
   
-  elements.runReconciliation.addEventListener('click', runMatching);
+  if (elements.runReconciliation) {
+    elements.runReconciliation.addEventListener('click', runMatching);
+  }
   
   // Exportação
-  elements.exportCsv.addEventListener('click', exportToCSV);
-  elements.exportJson.addEventListener('click', exportToJSON);
+  if (elements.exportCsv) {
+    elements.exportCsv.addEventListener('click', exportToCSV);
+  }
+  
+  if (elements.exportJson) {
+    elements.exportJson.addEventListener('click', exportToJSON);
+  }
   
   // Metadados
-  elements.companyName.addEventListener('input', debounce((e) => {
-    state.company = e.target.value;
-    autoSave();
-  }, 500));
+  if (elements.companyName) {
+    elements.companyName.addEventListener('input', debounce((e) => {
+      state.company = e.target.value;
+      autoSave();
+    }, 500));
+  }
   
-  elements.bankName.addEventListener('input', debounce((e) => {
-    state.bank = e.target.value;
-    autoSave();
-  }, 500));
+  if (elements.bankName) {
+    elements.bankName.addEventListener('input', debounce((e) => {
+      state.bank = e.target.value;
+      autoSave();
+    }, 500));
+  }
   
-  elements.pdfNotes.addEventListener('input', debounce((e) => {
-    state.pdfNotes = e.target.value;
-    autoSave();
-  }, 500));
+  if (elements.pdfNotes) {
+    elements.pdfNotes.addEventListener('input', debounce((e) => {
+      state.pdfNotes = e.target.value;
+      autoSave();
+    }, 500));
+  }
+  
+  // Moeda
+  if (elements.currencySelect) {
+    elements.currencySelect.addEventListener('change', (e) => {
+      state.currency = e.target.value;
+      saveState();
+      renderDashboard();
+      renderTransactions();
+    });
+  }
   
   // Reset
-  elements.resetData.addEventListener('click', () => {
-    const confirmed = confirm(
-      '⚠️ ATENÇÃO!\n\n' +
-      'Isso irá excluir PERMANENTEMENTE todos os dados:\n' +
-      '- Transações\n' +
-      '- Contas\n' +
-      '- Regras\n' +
-      '- Configurações\n\n' +
-      'Esta ação não pode ser desfeita!\n\n' +
-      'Deseja continuar?'
-    );
-    
-    if (confirmed) {
-      localStorage.clear();
-      showNotification('🗑️ Todos os dados foram limpos', 'success');
-      setTimeout(() => location.reload(), 1000);
-    }
-  });
+  if (elements.resetData) {
+    elements.resetData.addEventListener('click', () => {
+      const confirmed = confirm(
+        '⚠️ ATENÇÃO!\n\n' +
+        'Isso irá excluir PERMANENTEMENTE todos os dados:\n' +
+        '- Transações\n' +
+        '- Contas\n' +
+        '- Regras\n' +
+        '- Configurações\n\n' +
+        'Esta ação não pode ser desfeita!\n\n' +
+        'Deseja continuar?'
+      );
+      
+      if (confirmed) {
+        localStorage.clear();
+        showNotification('🗑️ Todos os dados foram limpos', 'success');
+        setTimeout(() => location.reload(), 1000);
+      }
+    });
+  }
   
-  // Amostras (opcional)
-  elements.loadSamples?.addEventListener('click', loadSampleData);
+  // Amostras
+  if (elements.loadSamples) {
+    elements.loadSamples.addEventListener('click', loadSampleData);
+  }
 }
 
 // ============================================
@@ -1124,7 +1306,6 @@ function debounce(func, wait) {
 }
 
 function loadSampleData() {
-  // Dados de exemplo para testes
   const samples = [
     { date: new Date('2026-02-01'), description: 'Receita Cliente ABC', amount: 5000, status: 'pending' },
     { date: new Date('2026-02-02'), description: 'Pagamento Fornecedor XYZ', amount: -2500, status: 'pending' },
