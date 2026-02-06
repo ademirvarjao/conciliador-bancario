@@ -1,18 +1,16 @@
 /**
- * CONCILIADOR BANCÁRIO v0.6
+ * CONCILIADOR BANCÁRIO v0.7
  * 
  * @description Ferramenta open source de conciliação bancária automática
  * @author Ademir Varjão
  * @license MIT
- * @version 0.6.0
+ * @version 0.7.0
  * @year 2026
  * 
- * Novidades v0.6:
- * - Layout tradicional e limpo
- * - Correções de bugs críticos
- * - Sistema de notificações toast
- * - Suporte a múltiplas moedas
- * - Performance otimizada
+ * Novidades v0.7:
+ * - Correção crítica na importação CSV
+ * - Suporte a arquivos PDF (texto e imagem com OCR)
+ * - Detecção inteligente de colunas CSV
  * - Melhor tratamento de erros
  */
 
@@ -31,8 +29,9 @@ const state = {
   bank: '',
   pdfNotes: '',
   currency: 'BRL',
-  version: '0.6.0',
-  lastUpdate: null
+  version: '0.7.0',
+  lastUpdate: null,
+  ocrEnabled: false
 };
 
 const CONFIG = {
@@ -84,7 +83,8 @@ const elements = {
   statDebits: $('#stat-debits'),
   statBalance: $('#stat-balance'),
   statReconciled: $('#stat-reconciled-pct'),
-  currencySelect: $('#currency-select')
+  currencySelect: $('#currency-select'),
+  ocrToggle: $('#ocr-toggle')
 };
 
 // ============================================
@@ -227,10 +227,10 @@ const validators = {
     if (file.size > CONFIG.maxFileSize) {
       return { valid: false, error: `Arquivo muito grande (máx: ${CONFIG.maxFileSize / 1024 / 1024}MB)` };
     }
-    const validExtensions = ['.ofx', '.csv', '.json'];
+    const validExtensions = ['.ofx', '.csv', '.json', '.pdf'];
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
     if (!validExtensions.includes(ext)) {
-      return { valid: false, error: 'Formato inválido. Use OFX, CSV ou JSON' };
+      return { valid: false, error: 'Formato inválido. Use OFX, CSV, JSON ou PDF' };
     }
     return { valid: true };
   },
@@ -345,6 +345,78 @@ function parseCSV(content) {
   });
 }
 
+/**
+ * Detecta quais colunas contêm data, descrição e valor em um CSV
+ */
+function detectCSVColumns(rows) {
+  if (rows.length < 2) return null;
+  
+  const header = rows[0].map(h => h.toLowerCase());
+  const sampleRow = rows[1];
+  
+  // Palavras-chave para identificação
+  const dateKeywords = ['data', 'date', 'dt', 'dia'];
+  const descKeywords = ['descri', 'historic', 'memo', 'name', 'desc'];
+  const amountKeywords = ['valor', 'amount', 'vlr', 'value', 'montante', 'total'];
+  
+  let dateCol = -1, descCol = -1, amountCol = -1;
+  
+  // Tenta identificar por cabeçalho
+  header.forEach((col, idx) => {
+    if (dateCol === -1 && dateKeywords.some(k => col.includes(k))) {
+      dateCol = idx;
+    }
+    if (descCol === -1 && descKeywords.some(k => col.includes(k))) {
+      descCol = idx;
+    }
+    if (amountCol === -1 && amountKeywords.some(k => col.includes(k))) {
+      amountCol = idx;
+    }
+  });
+  
+  // Se não encontrou por cabeçalho, tenta por análise de dados
+  if (dateCol === -1 || descCol === -1 || amountCol === -1) {
+    sampleRow.forEach((cell, idx) => {
+      const val = cell.trim();
+      
+      // Detecta data
+      if (dateCol === -1 && (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(val) || /^\d{8}$/.test(val))) {
+        dateCol = idx;
+      }
+      
+      // Detecta valor monetário
+      if (amountCol === -1 && /^[R$\-\+]?\s*[\d\.,]+$/.test(val)) {
+        const parsed = parseAmount(val);
+        if (!isNaN(parsed) && parsed !== 0) {
+          amountCol = idx;
+        }
+      }
+      
+      // Descrição: coluna com texto longo
+      if (descCol === -1 && val.length > 10 && !/^\d+$/.test(val)) {
+        descCol = idx;
+      }
+    });
+  }
+  
+  // Validação: precisa ter pelo menos data e valor
+  if (dateCol !== -1 && amountCol !== -1) {
+    // Se não achou descrição, usa a primeira coluna de texto
+    if (descCol === -1) {
+      for (let i = 0; i < sampleRow.length; i++) {
+        if (i !== dateCol && i !== amountCol && sampleRow[i].trim()) {
+          descCol = i;
+          break;
+        }
+      }
+    }
+    
+    return { dateCol, descCol, amountCol };
+  }
+  
+  return null;
+}
+
 function parseOFX(content) {
   const transactions = [];
   
@@ -381,6 +453,172 @@ function parseOFX(content) {
   return transactions;
 }
 
+/**
+ * Extrai texto de PDF
+ */
+async function extractTextFromPDF(file) {
+  try {
+    // Carrega PDF.js
+    if (!window.pdfjsLib) {
+      showNotification('Carregando biblioteca PDF.js...', 'info');
+      await loadPDFJS();
+    }
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    
+    return fullText;
+  } catch (e) {
+    console.error('Erro ao extrair texto do PDF:', e);
+    throw new Error('Não foi possível extrair texto do PDF');
+  }
+}
+
+/**
+ * Processa PDF usando OCR (Tesseract.js)
+ */
+async function extractTextWithOCR(file) {
+  try {
+    if (!window.Tesseract) {
+      showNotification('Carregando OCR... Pode demorar um pouco.', 'info');
+      await loadTesseract();
+    }
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      showNotification(`Processando página ${i} de ${pdf.numPages} com OCR...`, 'info');
+      
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 2.0 });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const context = canvas.getContext('2d');
+      
+      await page.render({ canvasContext: context, viewport }).promise;
+      
+      const imageData = canvas.toDataURL('image/png');
+      const result = await Tesseract.recognize(imageData, 'por', {
+        logger: m => console.log(m)
+      });
+      
+      fullText += result.data.text + '\n';
+    }
+    
+    return fullText;
+  } catch (e) {
+    console.error('Erro no OCR:', e);
+    throw new Error('Falha no processamento OCR');
+  }
+}
+
+/**
+ * Carrega PDF.js dinamicamente
+ */
+function loadPDFJS() {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) {
+      resolve();
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Carrega Tesseract.js dinamicamente
+ */
+function loadTesseract() {
+  return new Promise((resolve, reject) => {
+    if (window.Tesseract) {
+      resolve();
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Processa PDF e tenta extrair transações
+ */
+async function processPDF(file, useOCR = false) {
+  try {
+    let text;
+    
+    if (useOCR || state.ocrEnabled) {
+      showNotification('🔍 Iniciando OCR... Isso pode levar alguns minutos.', 'info');
+      text = await extractTextWithOCR(file);
+    } else {
+      text = await extractTextFromPDF(file);
+    }
+    
+    if (!text || text.trim().length < 50) {
+      showNotification('PDF parece ser uma imagem. Ative o OCR e tente novamente.', 'warning');
+      return [];
+    }
+    
+    // Tenta detectar formato de extrato bancário
+    const lines = text.split('\n').filter(l => l.trim());
+    const transactions = [];
+    
+    // Padrões comuns de extrato
+    const patterns = [
+      // DD/MM/YYYY Descrição 1.234,56
+      /(\d{2}\/\d{2}\/\d{4})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi,
+      // DD/MM Descrição Valor
+      /(\d{2}\/\d{2})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi
+    ];
+    
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const date = parseDate(match[1]);
+        const description = validators.sanitizeString(match[2]);
+        const amount = parseAmount(match[3]);
+        
+        if (date && description && !isNaN(amount)) {
+          transactions.push({ date, description, amount, status: 'pending' });
+        }
+      }
+      
+      if (transactions.length > 0) break;
+    }
+    
+    return transactions;
+  } catch (e) {
+    console.error('Erro ao processar PDF:', e);
+    showNotification(e.message || 'Erro ao processar PDF', 'error');
+    return [];
+  }
+}
+
 // ============================================
 // PROCESSAMENTO DE UPLOAD
 // ============================================
@@ -405,8 +643,21 @@ async function processUploadedFiles(files) {
         continue;
       }
       
-      const text = await file.text();
       const fileName = file.name.toLowerCase();
+      
+      if (fileName.endsWith('.pdf')) {
+        showNotification(`📄 Processando PDF: ${file.name}`, 'info');
+        const pdfTransactions = await processPDF(file, state.ocrEnabled);
+        allNew.push(...pdfTransactions);
+        
+        if (pdfTransactions.length === 0) {
+          errors.push(`${file.name}: Nenhuma transação encontrada no PDF`);
+        }
+        
+        continue;
+      }
+      
+      const text = await file.text();
       
       if (fileName.endsWith('.ofx')) {
         const parsed = parseOFX(text);
@@ -414,13 +665,34 @@ async function processUploadedFiles(files) {
       } else if (fileName.endsWith('.csv')) {
         const rows = parseCSV(text);
         
-        // Pula cabeçalho
-        rows.slice(1).forEach(r => {
-          if (r.length < 3) return;
+        if (rows.length < 2) {
+          errors.push(`${file.name}: CSV vazio ou inválido`);
+          continue;
+        }
+        
+        // Detecta colunas automaticamente
+        const columns = detectCSVColumns(rows);
+        
+        if (!columns) {
+          errors.push(`${file.name}: Não foi possível detectar formato do CSV`);
+          continue;
+        }
+        
+        const { dateCol, descCol, amountCol } = columns;
+        
+        // Determina se primeira linha é cabeçalho
+        const hasHeader = rows[0].some(cell => 
+          /data|descri|valor|amount/i.test(cell)
+        );
+        
+        const dataRows = hasHeader ? rows.slice(1) : rows;
+        
+        dataRows.forEach(r => {
+          if (r.length <= Math.max(dateCol, descCol, amountCol)) return;
           
-          const date = parseDate(r[0]);
-          const description = validators.sanitizeString(r[1]);
-          const amount = parseAmount(r[2]);
+          const date = parseDate(r[dateCol]);
+          const description = validators.sanitizeString(r[descCol] || 'Sem descrição');
+          const amount = parseAmount(r[amountCol]);
           
           if (date && description && !isNaN(amount)) {
             allNew.push({
@@ -431,6 +703,9 @@ async function processUploadedFiles(files) {
             });
           }
         });
+        
+        console.log(`CSV ${file.name}: detectado formato - Data:${dateCol}, Desc:${descCol}, Valor:${amountCol}`);
+        
       } else if (fileName.endsWith('.json')) {
         try {
           const data = JSON.parse(text);
@@ -457,7 +732,7 @@ async function processUploadedFiles(files) {
       importedAt: new Date().toISOString()
     }));
     
-    // Previne duplicatas mais robusta
+    // Previne duplicatas
     const existing = new Set(
       state.transactions.map(t => {
         const dateStr = t.date?.toISOString().split('T')[0] || '';
@@ -759,7 +1034,7 @@ function handleBulkDelete() {
 }
 
 // ============================================
-// CONCILIAÇÃO (MATCHING) - CORRIGIDA
+// CONCILIAÇÃO (MATCHING)
 // ============================================
 
 function calculateSimilarity(str1, str2) {
@@ -771,7 +1046,7 @@ function calculateSimilarity(str1, str2) {
   if (s1 === s2) return 1;
   if (s1.includes(s2) || s2.includes(s1)) return 0.8;
   
-  // Algoritmo de Levenshtein corrigido
+  // Algoritmo de Levenshtein
   const matrix = [];
   
   for (let i = 0; i <= s2.length; i++) {
@@ -788,9 +1063,9 @@ function calculateSimilarity(str1, str2) {
         matrix[i][j] = matrix[i - 1][j - 1];
       } else {
         matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1, // substituição
-          matrix[i][j - 1] + 1,     // inserção
-          matrix[i - 1][j] + 1      // deleção
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
         );
       }
     }
@@ -1055,13 +1330,14 @@ function updateUI() {
   if (elements.bankName) elements.bankName.value = state.bank || '';
   if (elements.pdfNotes) elements.pdfNotes.value = state.pdfNotes || '';
   if (elements.currencySelect) elements.currencySelect.value = state.currency || 'BRL';
+  if (elements.ocrToggle) elements.ocrToggle.checked = state.ocrEnabled || false;
   
   // Lista de contas
   if (elements.accountsList) {
     elements.accountsList.innerHTML = state.accounts.length === 0
       ? '<p style="color: #94a3b8; text-align: center; padding: 20px;">Nenhuma conta cadastrada</p>'
       : state.accounts.map(acc => 
-          `<span class="tag">${acc} <button onclick="removeAccount('${acc.replace(/'/g, "\\'")}')")" title="Remover conta">&times;</button></span>`
+          `<span class="tag">${acc} <button onclick="removeAccount('${acc.replace(/'/g, "\\'")}')" title="Remover conta">&times;</button></span>`
         ).join('');
   }
   
@@ -1076,7 +1352,7 @@ function updateUI() {
 }
 
 // ============================================
-// DRAG AND DROP - CORRIGIDO
+// DRAG AND DROP
 // ============================================
 
 function setupDragAndDrop() {
@@ -1258,6 +1534,18 @@ function setupEventListeners() {
       saveState();
       renderDashboard();
       renderTransactions();
+    });
+  }
+  
+  // OCR Toggle
+  if (elements.ocrToggle) {
+    elements.ocrToggle.addEventListener('change', (e) => {
+      state.ocrEnabled = e.target.checked;
+      autoSave();
+      showNotification(
+        state.ocrEnabled ? '🔍 OCR ativado para próximos PDFs' : 'OCR desativado',
+        'info'
+      );
     });
   }
   
