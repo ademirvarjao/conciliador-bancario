@@ -1,4 +1,4 @@
-# 🏦 Conciliador Bancário Pro v0.5
+# 🏦 Conciliador Bancário v0.5
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.5.0-green.svg)](https://github.com/ademirvarjao/conciliador-bancario)
