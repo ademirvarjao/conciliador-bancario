@@ -1,167 +1,199 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/index.html b/index.html
-index caf09fe88e3453adc39212bf8602de503b17f3c1..9e9bdbffc994809cd17e8ca16a2cb0a3da2f9a38 100644
---- a/index.html
-+++ b/index.html
-@@ -17,51 +17,51 @@
-         </div>
-       </div>
-       <div class="header-actions">
-         <button id="load-samples" class="btn btn-outline">
-           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-           Carregar amostras
-         </button>
-         <button id="reset-data" class="btn btn-danger btn-outline">
-           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-           Limpar dados
-         </button>
-       </div>
-     </header>
- 
-     <main class="app-content">
-       
-       <section class="card highlight-card">
-         <div class="card-header">
-           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-           <h2>1. Central de Importação</h2>
-         </div>
-         <div class="card-body">
-           <div class="grid two-columns-sidebar-right">
-             <div class="upload-zone-container">
-               <label for="file-input" class="upload-zone">
--                <input id="file-input" type="file" multiple hidden />
-+                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json" />
-                 <div class="upload-content">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
-                   <span>Clique ou arraste arquivos OFX, CSV ou JSON aqui</span>
-                   <small>Detecção automática de formatos e moedas.</small>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conciliador Bancário Pro</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-brand">
+        <svg class="brand-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"/><path d="M7 15h10"/><path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6Z"/></svg>
+        <div>
+          <h1>Conciliador Bancário Pro</h1>
+          <p class="subtitle">Gestão financeira inteligente e privada</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="load-samples" class="btn btn-outline">Carregar Amostras</button>
+        <button id="reset-data" class="btn btn-danger-outline">Limpar Tudo</button>
+      </div>
+    </header>
+
+    <div class="dashboard-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total em Entradas</span>
+        <span id="stat-credits" class="stat-value text-success">R$ 0,00</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Total em Saídas</span>
+        <span id="stat-debits" class="stat-value text-danger">R$ 0,00</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Saldo do Período</span>
+        <span id="stat-balance" class="stat-value">R$ 0,00</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Status Conciliação</span>
+        <span id="stat-reconciled-pct" class="stat-value">0%</span>
+      </div>
+    </div>
+
+    <main class="app-content">
+      <section class="card section-import">
+        <div class="card-header">
+          <span class="step-number">1</span>
+          <h2>Importação de Arquivos</h2>
+        </div>
+        <div class="card-body">
+          <div class="import-layout">
+            <div class="upload-area">
+              <label for="file-input" class="upload-zone" id="drop-zone">
+                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json" />
+                <div class="upload-content">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                  <span>Arraste seus extratos (OFX, CSV)</span>
+                  <small>Dados processados localmente no seu navegador</small>
+                </div>
+              </label>
+              <div id="import-summary" class="alert alert-info hidden"></div>
+            </div>
+            <div class="metadata-form">
+               <div class="form-row">
+                 <div class="form-group">
+                   <label>Empresa</label>
+                   <input id="company-name" type="text" class="form-control" placeholder="Razão Social" />
                  </div>
-               </label>
-               <div id="import-summary" class="banner banner-info hidden">Aguardando arquivos...</div>
-             </div>
- 
-             <div class="form-group">
-                <label for="pdf-notes">Notas de PDF (Opcional)</label>
-                <textarea id="pdf-notes" rows="6" class="form-control" placeholder="Cole aqui trechos para documentação..."></textarea>
-             </div>
-           </div>
- 
-           <div class="grid three-columns mt-6">
-             <div class="form-group">
-               <label for="company-name">Empresa</label>
-               <input id="company-name" type="text" class="form-control" placeholder="Ex: Minha Loja LTDA" />
-             </div>
-             <div class="form-group">
-               <label for="bank-name">Banco</label>
-               <input id="bank-name" type="text" class="form-control" placeholder="Ex: Itaú" />
-             </div>
-             <div class="form-group">
-@@ -69,51 +69,51 @@
-               <select id="currency" class="form-control form-select">
-                 <option value="BRL" selected>BRL (R$)</option>
-                 <option value="USD">USD ($)</option>
-                 <option value="EUR">EUR (€)</option>
-               </select>
-             </div>
-           </div>
- 
-           <div class="actions-bar mt-6">
-             <button id="parse-files" class="btn btn-primary btn-lg">Processar Arquivos</button>
-             <button id="download-unified" class="btn btn-secondary">Baixar Unificado</button>
-           </div>
-         </div>
-       </section>
- 
-       <div class="grid two-columns">
-         <section class="card">
-           <div class="card-header">
-             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-             <h2>2. Plano de Contas</h2>
-           </div>
-           <div class="card-body">
-             <div class="form-group">
-               <label for="accounts-file" class="file-upload-label">
-                 <span>Importar CSV</span>
--                <input id="accounts-file" type="file" class="form-control-file" />
-+                <input id="accounts-file" type="file" class="form-control-file" accept=".csv" />
-               </label>
-             </div>
-             <div class="input-group mt-4">
-               <input id="new-account" type="text" class="form-control" placeholder="Ex: 1.1.1 - Banco Itaú" />
-               <button id="add-account" class="btn btn-secondary">Adicionar</button>
-             </div>
-             <div class="tags-container" id="accounts-list"></div>
-           </div>
-         </section>
- 
-         <section class="card">
-           <div class="card-header">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
-             <h2>3. Regras Inteligentes</h2>
-           </div>
-           <div class="card-body">
-             <div class="grid two-columns-tight">
-               <div class="form-group">
-                 <label for="rule-pattern">Contém no Histórico</label>
-                 <input id="rule-pattern" type="text" class="form-control" placeholder="Ex: PIX|TAR" />
+                 <div class="form-group">
+                   <label>Banco</label>
+                   <input id="bank-name" type="text" class="form-control" placeholder="Ex: Itaú, BB..." />
+                 </div>
                </div>
                <div class="form-group">
-                 <label for="rule-account">Conta Destino</label>
-                 <input id="rule-account" type="text" class="form-control" placeholder="Ex: Tarifas" />
+                  <label>Notas de Conferência</label>
+                  <textarea id="pdf-notes" rows="3" class="form-control" placeholder="Observações importantes..."></textarea>
                </div>
-@@ -150,51 +150,51 @@
-                   <th>Data</th>
-                   <th>Descrição</th>
-                   <th class="text-right">Débito</th>
-                   <th class="text-right">Crédito</th>
-                   <th class="text-right">Saldo</th>
-                   <th style="width: 250px;">Conta Contábil</th>
-                   <th class="text-center">Status</th>
-                 </tr>
-               </thead>
-               <tbody></tbody>
-             </table>
-           </div>
-         </div>
-       </section>
- 
-       <section class="card">
-         <div class="card-header">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="section-icon"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8"/><path d="M9 7L4 20"/><path d="M15 7l5 13"/></svg>
-           <h2>5. Motor de Conciliação</h2>
-         </div>
-         <div class="card-body">
-           <div class="grid two-columns-sidebar-left align-end">
+            </div>
+          </div>
+          <div class="actions-bar">
+            <button id="parse-files" class="btn btn-primary">Processar Arquivos</button>
+            <div class="export-group">
+              <button id="export-csv" class="btn btn-secondary">Exportar CSV</button>
+              <button id="export-json" class="btn btn-secondary">JSON</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="main-grid">
+        <div class="main-column">
+          <section class="card">
+            <div class="card-header space-between">
+              <div class="flex-center gap-2">
+                <span class="step-number">2</span>
+                <h2>Transações do Extrato</h2>
+              </div>
+              <div class="table-filters">
+                <input id="search-transactions" type="text" class="form-control form-control-sm" placeholder="Buscar..." />
+                <select id="filter-status" class="form-control form-control-sm">
+                  <option value="all">Todos</option>
+                  <option value="pending">Pendentes</option>
+                  <option value="matched">Conciliados</option>
+                </select>
+              </div>
+            </div>
+            
+            <div id="bulk-actions" class="bulk-toolbar hidden">
+              <span id="selected-count">0 itens selecionados</span>
+              <div class="bulk-btns">
+                <select id="bulk-account-select" class="form-control form-control-sm">
+                  <option value="">Aplicar Conta...</option>
+                </select>
+                <button id="bulk-delete" class="btn btn-sm btn-danger">Excluir</button>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table id="transactions-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="select-all"></th>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th class="text-right">Valor</th>
+                    <th>Conta Contábil</th>
+                    <th class="text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <aside class="sidebar-column">
+          <section class="card">
+            <div class="card-header">
+              <h2>Plano de Contas</h2>
+            </div>
+            <div class="card-body">
+              <div class="file-upload-mini">
+                <label for="accounts-file">Importar CSV</label>
+                <input id="accounts-file" type="file" accept=".csv" />
+              </div>
+              <div class="input-group mt-2">
+                <input id="new-account" type="text" class="form-control" placeholder="Nova conta..." />
+                <button id="add-account" class="btn btn-secondary">+</button>
+              </div>
+              <div id="accounts-list" class="tags-container scrollable"></div>
+            </div>
+          </section>
+
+          <section class="card mt-4">
+            <div class="card-header">
+              <h2>Motor de Conciliação</h2>
+            </div>
+            <div class="card-body">
               <div class="form-group">
-                <label class="file-upload-label display-block">
-                  <span>Carregar Razão Contábil (CSV)</span>
--                 <input id="ledger-input" type="file" class="form-control-file" />
-+                 <input id="ledger-input" type="file" class="form-control-file" accept=".csv" />
-                </label>
-                <small class="hint">Data, Descrição, Valor, Conta</small>
-             </div>
-             
-             <div class="reconciliation-controls">
+                <label>Razão Contábil (CSV)</label>
+                <input id="ledger-input" type="file" class="form-control" accept=".csv" />
+              </div>
+              <div class="form-row mt-2">
                 <div class="form-group">
-                   <label for="tolerance-days">Tolerância Dias</label>
-                   <input id="tolerance-days" type="number" min="0" value="2" class="form-control" />
+                  <label>Tol. Dias</label>
+                  <input id="tolerance-days" type="number" value="2" class="form-control" />
                 </div>
                 <div class="form-group">
-                   <label for="tolerance-value">Tolerância Valor</label>
-                   <input id="tolerance-value" type="number" min="0" step="0.01" value="0.05" class="form-control" />
+                  <label>Tol. Valor</label>
+                  <input id="tolerance-value" type="number" step="0.01" value="0.05" class="form-control" />
                 </div>
-                 <button id="run-reconciliation" class="btn btn-success btn-lg">Conciliar Agora</button>
-             </div>
-           </div>
- 
-            <div id="reconciliation-summary" class="banner banner-warning hidden mt-6"></div>
- 
-           <div class="table-responsive mt-6">
-             <table id="reconciliation-table" class="data-table">
-               <thead>
-                 <tr>
-                   <th>Banco</th>
-                   <th>Contabilidade</th>
- 
-EOF
-)
+              </div>
+              <button id="run-reconciliation" class="btn btn-success w-full mt-2">Executar Matching</button>
+              <div id="reconciliation-summary" class="alert alert-warning mt-2 hidden"></div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <template id="transaction-row-template">
+    <tr>
+      <td><input type="checkbox" class="row-checkbox"></td>
+      <td data-field="date"></td>
+      <td data-field="description" class="text-truncate" style="max-width: 250px;"></td>
+      <td data-field="amount" class="text-right font-medium"></td>
+      <td>
+        <select class="account-picker form-control form-control-sm"></select>
+      </td>
+      <td class="text-center"><span class="status-badge" data-field="status"></span></td>
+    </tr>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
