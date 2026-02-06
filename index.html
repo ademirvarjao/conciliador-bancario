@@ -3,130 +3,229 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Conciliador Bancário Pro</title>
+  <meta name="description" content="Conciliador Bancário Pro v0.5 - Ferramenta open source de conciliação bancária automática, 100% executada no navegador. Privacidade total.">
+  <meta name="keywords" content="conciliação bancária, contabilidade, OFX, CSV, razão contábil, matching, reconciliação">
+  <meta name="author" content="Ademir Varjão">
+  <meta name="version" content="0.5.0">
+  <meta name="theme-color" content="#4f46e5">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Conciliador Bancário Pro v0.5">
+  <meta property="og:description" content="Ferramenta open source de conciliação bancária automática. 100% privado e executado no navegador.">
+  
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Conciliador Bancário Pro v0.5">
+  <meta name="twitter:description" content="Ferramenta open source de conciliação bancária automática.">
+  
+  <title>Conciliador Bancário Pro v0.5</title>
+  
+  <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
+  
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Favicon (pode ser adicionado futuramente) -->
+  <!-- <link rel="icon" type="image/svg+xml" href="favicon.svg"> -->
 </head>
 <body>
   <div class="app-container">
+    <!-- ====================================
+         HEADER
+         ==================================== -->
     <header class="app-header">
       <div class="header-brand">
-        <svg class="brand-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h18"/><path d="M7 15h10"/><path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6Z"/></svg>
+        <svg class="brand-icon" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 10h18"/>
+          <path d="M7 15h10"/>
+          <path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6Z"/>
+        </svg>
         <div>
           <h1>Conciliador Bancário Pro</h1>
-          <p class="subtitle">Gestão financeira inteligente e privada</p>
+          <p class="subtitle">v0.5 - Gestão financeira inteligente e privada</p>
         </div>
       </div>
       <div class="header-actions">
-        <button id="load-samples" class="btn btn-outline">Carregar Amostras</button>
-        <button id="reset-data" class="btn btn-danger-outline">Limpar Tudo</button>
+        <button id="load-samples" class="btn btn-outline" title="Carregar dados de exemplo para teste">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Carregar Amostras
+        </button>
+        <button id="reset-data" class="btn btn-danger-outline" title="Limpar todos os dados armazenados">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+          Limpar Tudo
+        </button>
       </div>
     </header>
 
-    <div class="dashboard-grid">
+    <!-- ====================================
+         DASHBOARD DE ESTATÍSTICAS
+         ==================================== -->
+    <div class="dashboard-grid" role="region" aria-label="Estatísticas financeiras">
       <div class="stat-card">
         <span class="stat-label">Total em Entradas</span>
-        <span id="stat-credits" class="stat-value text-success">R$ 0,00</span>
+        <span id="stat-credits" class="stat-value text-success" aria-live="polite">R$ 0,00</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Total em Saídas</span>
-        <span id="stat-debits" class="stat-value text-danger">R$ 0,00</span>
+        <span id="stat-debits" class="stat-value text-danger" aria-live="polite">R$ 0,00</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Saldo do Período</span>
-        <span id="stat-balance" class="stat-value">R$ 0,00</span>
+        <span id="stat-balance" class="stat-value" aria-live="polite">R$ 0,00</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">Status Conciliação</span>
-        <span id="stat-reconciled-pct" class="stat-value">0%</span>
+        <span id="stat-reconciled-pct" class="stat-value" aria-live="polite">0%</span>
       </div>
     </div>
 
+    <!-- ====================================
+         CONTEÚDO PRINCIPAL
+         ==================================== -->
     <main class="app-content">
-      <section class="card section-import">
+      <!-- SEÇÃO DE IMPORTAÇÃO -->
+      <section class="card section-import" aria-labelledby="import-heading">
         <div class="card-header">
-          <span class="step-number">1</span>
-          <h2>Importação de Arquivos</h2>
+          <span class="step-number" aria-hidden="true">1</span>
+          <h2 id="import-heading">Importação de Arquivos</h2>
         </div>
         <div class="card-body">
           <div class="import-layout">
+            <!-- Área de Upload -->
             <div class="upload-area">
-              <label for="file-input" class="upload-zone" id="drop-zone">
-                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json" />
+              <label for="file-input" class="upload-zone" id="drop-zone" tabindex="0" role="button" aria-label="Área de upload de arquivos">
+                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json" aria-label="Selecionar arquivos de extrato" />
                 <div class="upload-content">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                  <span>Arraste seus extratos (OFX, CSV)</span>
-                  <small>Dados processados localmente no seu navegador</small>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" x2="12" y1="3" y2="15"/>
+                  </svg>
+                  <span>Arraste seus extratos bancários (OFX, CSV, JSON)</span>
+                  <small>Dados processados localmente no seu navegador. Máximo 10MB por arquivo.</small>
                 </div>
               </label>
-              <div id="import-summary" class="alert alert-info hidden"></div>
+              <div id="import-summary" class="alert alert-info hidden" role="status" aria-live="polite"></div>
             </div>
+            
+            <!-- Formulário de Metadados -->
             <div class="metadata-form">
-               <div class="form-row">
-                 <div class="form-group">
-                   <label>Empresa</label>
-                   <input id="company-name" type="text" class="form-control" placeholder="Razão Social" />
-                 </div>
-                 <div class="form-group">
-                   <label>Banco</label>
-                   <input id="bank-name" type="text" class="form-control" placeholder="Ex: Itaú, BB..." />
-                 </div>
-               </div>
-               <div class="form-group">
-                  <label>Notas de Conferência</label>
-                  <textarea id="pdf-notes" rows="3" class="form-control" placeholder="Observações importantes..."></textarea>
-               </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="company-name">Empresa</label>
+                  <input id="company-name" type="text" class="form-control" placeholder="Razão Social" aria-label="Nome da empresa" />
+                </div>
+                <div class="form-group">
+                  <label for="bank-name">Banco</label>
+                  <input id="bank-name" type="text" class="form-control" placeholder="Ex: Itaú, Banco do Brasil..." aria-label="Nome do banco" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="pdf-notes">Notas de Conferência</label>
+                <textarea id="pdf-notes" rows="3" class="form-control" placeholder="Observações importantes sobre esta conciliação..." aria-label="Notas de conferência"></textarea>
+              </div>
             </div>
           </div>
+          
+          <!-- Barra de Ações -->
           <div class="actions-bar">
-            <button id="parse-files" class="btn btn-primary">Processar Arquivos</button>
+            <button id="parse-files" class="btn btn-primary" aria-label="Processar arquivos importados">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Processar Arquivos
+            </button>
             <div class="export-group">
-              <button id="export-csv" class="btn btn-secondary">Exportar CSV</button>
-              <button id="export-json" class="btn btn-secondary">JSON</button>
+              <button id="export-csv" class="btn btn-secondary" title="Exportar transações em formato CSV">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Exportar CSV
+              </button>
+              <button id="export-json" class="btn btn-secondary" title="Exportar transações em formato JSON">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                JSON
+              </button>
             </div>
           </div>
         </div>
       </section>
 
+      <!-- ====================================
+           GRID PRINCIPAL (Transações + Sidebar)
+           ==================================== -->
       <div class="main-grid">
+        <!-- COLUNA PRINCIPAL: Tabela de Transações -->
         <div class="main-column">
-          <section class="card">
+          <section class="card" aria-labelledby="transactions-heading">
             <div class="card-header space-between">
               <div class="flex-center gap-2">
-                <span class="step-number">2</span>
-                <h2>Transações do Extrato</h2>
+                <span class="step-number" aria-hidden="true">2</span>
+                <h2 id="transactions-heading">Transações do Extrato</h2>
               </div>
-              <div class="table-filters">
-                <input id="search-transactions" type="text" class="form-control form-control-sm" placeholder="Buscar..." />
-                <select id="filter-status" class="form-control form-control-sm">
-                  <option value="all">Todos</option>
+              <div class="table-filters" role="search">
+                <input 
+                  id="search-transactions" 
+                  type="text" 
+                  class="form-control form-control-sm" 
+                  placeholder="Buscar transação..."
+                  aria-label="Buscar transações por descrição ou conta"
+                />
+                <select id="filter-status" class="form-control form-control-sm" aria-label="Filtrar por status">
+                  <option value="all">Todos os Status</option>
                   <option value="pending">Pendentes</option>
                   <option value="matched">Conciliados</option>
                 </select>
               </div>
             </div>
             
-            <div id="bulk-actions" class="bulk-toolbar hidden">
-              <span id="selected-count">0 itens selecionados</span>
+            <!-- Toolbar de Ações em Lote -->
+            <div id="bulk-actions" class="bulk-toolbar hidden" role="toolbar" aria-label="Ações em lote">
+              <span id="selected-count" aria-live="polite">0 itens selecionados</span>
               <div class="bulk-btns">
-                <select id="bulk-account-select" class="form-control form-control-sm">
+                <select id="bulk-account-select" class="form-control form-control-sm" aria-label="Aplicar conta contábil em lote">
                   <option value="">Aplicar Conta...</option>
                 </select>
-                <button id="bulk-delete" class="btn btn-sm btn-danger">Excluir</button>
+                <button id="bulk-delete" class="btn btn-sm btn-danger" title="Excluir transações selecionadas">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                  </svg>
+                  Excluir
+                </button>
               </div>
             </div>
 
+            <!-- Tabela de Transações -->
             <div class="table-container">
-              <table id="transactions-table" class="data-table">
+              <table id="transactions-table" class="data-table" role="table" aria-label="Lista de transações bancárias">
                 <thead>
                   <tr>
-                    <th><input type="checkbox" id="select-all"></th>
-                    <th>Data</th>
-                    <th>Descrição</th>
-                    <th class="text-right">Valor</th>
-                    <th>Conta Contábil</th>
-                    <th class="text-center">Status</th>
+                    <th scope="col">
+                      <input type="checkbox" id="select-all" aria-label="Selecionar todas as transações">
+                    </th>
+                    <th scope="col">Data</th>
+                    <th scope="col">Descrição</th>
+                    <th scope="col" class="text-right">Valor</th>
+                    <th scope="col">Conta Contábil</th>
+                    <th scope="col" class="text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -135,65 +234,131 @@
           </section>
         </div>
 
+        <!-- SIDEBAR: Plano de Contas e Conciliação -->
         <aside class="sidebar-column">
-          <section class="card">
+          <!-- Plano de Contas -->
+          <section class="card" aria-labelledby="accounts-heading">
             <div class="card-header">
-              <h2>Plano de Contas</h2>
+              <h2 id="accounts-heading">Plano de Contas</h2>
             </div>
             <div class="card-body">
               <div class="file-upload-mini">
-                <label for="accounts-file">Importar CSV</label>
-                <input id="accounts-file" type="file" accept=".csv" />
+                <label for="accounts-file">Importar Contas (CSV)</label>
+                <input id="accounts-file" type="file" accept=".csv" aria-label="Importar plano de contas de arquivo CSV" />
               </div>
               <div class="input-group mt-2">
-                <input id="new-account" type="text" class="form-control" placeholder="Nova conta..." />
-                <button id="add-account" class="btn btn-secondary">+</button>
+                <input 
+                  id="new-account" 
+                  type="text" 
+                  class="form-control" 
+                  placeholder="Nova conta contábil..."
+                  aria-label="Nome da nova conta contábil"
+                />
+                <button id="add-account" class="btn btn-secondary" title="Adicionar conta" aria-label="Adicionar conta">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </button>
               </div>
-              <div id="accounts-list" class="tags-container scrollable"></div>
+              <div id="accounts-list" class="tags-container scrollable" role="list" aria-label="Lista de contas contábeis"></div>
             </div>
           </section>
 
-          <section class="card mt-4">
+          <!-- Motor de Conciliação -->
+          <section class="card mt-4" aria-labelledby="reconciliation-heading">
             <div class="card-header">
-              <h2>Motor de Conciliação</h2>
+              <h2 id="reconciliation-heading">Motor de Conciliação</h2>
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label>Razão Contábil (CSV)</label>
-                <input id="ledger-input" type="file" class="form-control" accept=".csv" />
+                <label for="ledger-input">Razão Contábil (CSV)</label>
+                <input id="ledger-input" type="file" class="form-control" accept=".csv" aria-label="Carregar arquivo de razão contábil" />
+                <small style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 4px;">
+                  Formato esperado: Data, Descrição, Valor, Conta
+                </small>
               </div>
               <div class="form-row mt-2">
                 <div class="form-group">
-                  <label>Tol. Dias</label>
-                  <input id="tolerance-days" type="number" value="2" class="form-control" />
+                  <label for="tolerance-days">Tolerância (Dias)</label>
+                  <input 
+                    id="tolerance-days" 
+                    type="number" 
+                    value="2" 
+                    min="0" 
+                    max="30" 
+                    class="form-control"
+                    aria-label="Tolerância em dias para matching"
+                    title="Diferença máxima em dias entre datas para considerar match"
+                  />
                 </div>
                 <div class="form-group">
-                  <label>Tol. Valor</label>
-                  <input id="tolerance-value" type="number" step="0.01" value="0.05" class="form-control" />
+                  <label for="tolerance-value">Tolerância (R$)</label>
+                  <input 
+                    id="tolerance-value" 
+                    type="number" 
+                    step="0.01" 
+                    value="0.05" 
+                    min="0" 
+                    class="form-control"
+                    aria-label="Tolerância em reais para matching"
+                    title="Diferença máxima em reais entre valores para considerar match"
+                  />
                 </div>
               </div>
-              <button id="run-reconciliation" class="btn btn-success w-full mt-2">Executar Matching</button>
-              <div id="reconciliation-summary" class="alert alert-warning mt-2 hidden"></div>
+              <button id="run-reconciliation" class="btn btn-success w-full mt-2" disabled aria-label="Executar conciliação automática">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                Executar Matching
+              </button>
+              <div id="reconciliation-summary" class="alert alert-info mt-2 hidden" role="status" aria-live="polite"></div>
             </div>
           </section>
         </aside>
       </div>
     </main>
+    
+    <!-- ====================================
+         FOOTER (Opcional)
+         ==================================== -->
+    <footer style="margin-top: 40px; padding: 20px 0; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+      <p style="margin: 0 0 8px 0;">
+        <strong>Conciliador Bancário Pro v0.5</strong> - Open Source | MIT License
+      </p>
+      <p style="margin: 0;">
+        Desenvolvido por <a href="https://github.com/ademirvarjao" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: none;">Ademir Varjão</a>
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 0.75rem;">
+        🔒 100% Local | 🛡️ Seus dados nunca saem do navegador
+      </p>
+    </footer>
   </div>
 
+  <!-- ====================================
+       TEMPLATE: Linha de Transação
+       ==================================== -->
   <template id="transaction-row-template">
     <tr>
-      <td><input type="checkbox" class="row-checkbox"></td>
+      <td>
+        <input type="checkbox" class="row-checkbox" aria-label="Selecionar transação">
+      </td>
       <td data-field="date"></td>
-      <td data-field="description" class="text-truncate" style="max-width: 250px;"></td>
+      <td data-field="description" class="text-truncate" style="max-width: 300px;"></td>
       <td data-field="amount" class="text-right font-medium"></td>
       <td>
-        <select class="account-picker form-control form-control-sm"></select>
+        <select class="account-picker form-control form-control-sm" aria-label="Selecionar conta contábil"></select>
       </td>
-      <td class="text-center"><span class="status-badge" data-field="status"></span></td>
+      <td class="text-center">
+        <span class="status-badge" data-field="status"></span>
+      </td>
     </tr>
   </template>
 
+  <!-- ====================================
+       SCRIPTS
+       ==================================== -->
   <script src="app.js"></script>
 </body>
 </html>
