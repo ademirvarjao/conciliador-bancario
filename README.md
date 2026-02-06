@@ -1,26 +1,38 @@
-# Conciliador Bancário Inteligente
+# Conciliador Bancário Pro v2
 
-Aplicativo executado 100% no navegador para importar extratos bancários, converter para um padrão único e conciliar com lançamentos contábeis. O sistema inclui aprendizado de regras por empresa, plano de contas, conversão OFX/CSV/JSON e conciliação automática.
+O **Conciliador Bancário Pro** é uma ferramenta de código aberto, 100% executada no navegador, projetada para simplificar a conferência entre o seu extrato bancário e a sua contabilidade interna. 
 
-## Recursos principais
+## 🚀 Como Começar (Passo a Passo)
 
-- **Importação Flexível:**
-  - **CSV:** Detecta automaticamente separadores (vírgula/ponto e vírgula) e formatos de número (brasileiro `1.000,00` ou internacional `1,000.00`).
-  - **OFX:** Suporte robusto a datas e valores, ignorando metadados de fuso horário que causam erros.
-  - **JSON:** Importação direta de arrays de objetos.
-- **Plano de contas:** Importação via CSV e criação manual de contas na interface.
-- **Regras inteligentes:** O sistema aprende a associar históricos (ex: "Pgto Energia") a contas contábeis (ex: "Despesas de Luz") e salva no seu navegador.
-- **Conciliação automática:** Algoritmo que compara extrato vs. contabilidade com tolerância ajustável de dias e valores.
-- **Notas de PDF:** Campo dedicado para documentar conversões manuais de extratos em PDF.
-- **Privacidade:** Todos os dados ficam salvos apenas no seu `localStorage`. Nada é enviado para servidores externos.
+### 1. Preparação dos Dados
+* **Extrato:** Exporte o extrato do seu banco nos formatos **OFX** (preferencial) ou **CSV**.
+* **Contabilidade:** Exporte o seu razão contábil ou planilha de lançamentos em **CSV** (Colunas: Data, Descrição, Valor, Conta).
 
-## Como executar
+### 2. Configuração Inicial
+* Abra o `index.html` em qualquer navegador moderno.
+* No campo **Plano de Contas**, adicione as categorias que você utiliza (ex: "Receita de Vendas", "Tarifas Bancárias", "Energia Elétrica").
+* *Dica:* Você pode importar um CSV com sua lista de contas para ganhar tempo.
 
-Simplesmente abra o arquivo `index.html` no seu navegador.
+### 3. Importação e Processamento
+* Arraste seus arquivos de extrato para a **Zona de Upload**.
+* Clique em **Processar Arquivos**. O sistema irá ler os dados e tentar categorizar automaticamente com base em suas regras anteriores.
 
-Para uma melhor experiência (e evitar bloqueios de segurança de alguns navegadores ao carregar módulos ou usar certas APIs), recomenda-se um servidor local simples:
+### 4. Categorização e Regras
+* Para transações pendentes, selecione a conta contábil diretamente na tabela.
+* **Regras Inteligentes:** Sempre que você atribui uma conta a uma descrição, o sistema "aprende" e aplicará automaticamente essa conta em importações futuras.
+* Use as **Ações em Lote** para selecionar várias linhas e aplicar uma conta de uma só vez.
 
-1. Tenha o Python instalado.
-2. Na pasta do projeto, rode:
-   ```bash
-   python -m http.server 8000
+### 5. Reconciliação Automática (Matching)
+* Carregue o seu arquivo de **Razão Contábil**.
+* Defina a **Tolerância de Dias** (ex: 2 dias para compensação bancária) e **Tolerância de Valor** (ex: R$ 0,05 para diferenças de arredondamento).
+* Clique em **Executar Matching**. O sistema cruzará os dados e marcará como "Conciliado" tudo o que for idêntico nos dois registros.
+
+### 6. Exportação
+* Ao final do processo, exporte o resultado em **CSV** ou **JSON** para importar de volta para o seu ERP ou enviar para o seu contador.
+
+## 🔒 Segurança e Privacidade
+* **Zero Servidor:** Seus dados financeiros nunca saem do seu computador. O processamento é local.
+* **Armazenamento Local:** As configurações e transações ficam salvas no `localStorage` do seu próprio navegador.
+
+---
+*Desenvolvido para profissionais que buscam agilidade sem abrir mão da privacidade.*
