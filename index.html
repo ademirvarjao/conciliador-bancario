@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Conciliador Bancário v0.6 - Ferramenta open source de conciliação bancária automática, 100% executada no navegador. Privacidade total.">
-  <meta name="keywords" content="conciliação bancária, contabilidade, OFX, CSV, razão contábil, matching, reconciliação">
+  <meta name="description" content="Conciliador Bancário v0.7 - Ferramenta open source de conciliação bancária automática, 100% executada no navegador. Privacidade total. Suporte a PDF com OCR.">
+  <meta name="keywords" content="conciliação bancária, contabilidade, OFX, CSV, PDF, OCR, razão contábil, matching, reconciliação">
   <meta name="author" content="Ademir Varjão">
-  <meta name="version" content="0.6.0">
+  <meta name="version" content="0.7.0">
   <meta name="theme-color" content="#4f46e5">
   
-  <title>Conciliador Bancário v0.6</title>
+  <title>Conciliador Bancário v0.7</title>
   
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,7 +28,7 @@
         </svg>
         <div>
           <h1>Conciliador Bancário</h1>
-          <p class="subtitle">v0.6 - Layout tradicional e otimizado</p>
+          <p class="subtitle">v0.7 - Agora com suporte a PDF e OCR</p>
         </div>
       </div>
       <div class="header-actions">
@@ -76,15 +76,27 @@
           <div class="import-grid">
             <div class="upload-wrapper">
               <label for="file-input" class="upload-zone" id="drop-zone">
-                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json" />
+                <input id="file-input" type="file" multiple hidden accept=".ofx,.csv,.json,.pdf" />
                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="17 8 12 3 7 8"/>
                   <line x1="12" x2="12" y1="3" y2="15"/>
                 </svg>
-                <span>Arraste extratos bancários (OFX, CSV, JSON)</span>
+                <span>Arraste extratos bancários (OFX, CSV, JSON, PDF)</span>
                 <small>Processamento 100% local • Máx 10MB</small>
               </label>
+              
+              <div class="ocr-toggle-wrapper">
+                <label class="switch">
+                  <input type="checkbox" id="ocr-toggle" />
+                  <span class="slider"></span>
+                </label>
+                <div class="ocr-label">
+                  <strong>🔍 OCR para PDFs em Imagem</strong>
+                  <small>Ative se o PDF for digitalizado (imagem). O processamento pode demorar.</small>
+                </div>
+              </div>
+              
               <div id="import-summary" class="alert alert-info hidden"></div>
             </div>
             
@@ -224,7 +236,7 @@
     </main>
     
     <footer class="app-footer">
-      <p><strong>Conciliador Bancário v0.6</strong> - Open Source | MIT License</p>
+      <p><strong>Conciliador Bancário v0.7</strong> - Open Source | MIT License</p>
       <p>Desenvolvido por <a href="https://github.com/ademirvarjao" target="_blank">Ademir Varjão</a></p>
       <p>🔒 100% Local | 🛡️ Seus dados nunca saem do navegador</p>
     </footer>
