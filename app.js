@@ -1,5 +1,5 @@
 /**
- * CONCILIADOR BANCÁRIO PRO v0.5
+ * CONCILIADOR BANCÁRIO v0.5
  * 
  * @description Ferramenta open source de conciliação bancária automática
  * @author Ademir Varjão
@@ -1163,7 +1163,7 @@ window.removeAccount = removeAccount;
 // ============================================
 
 function init() {
-  console.log(`%c🏦 Conciliador Bancário Pro v${state.version}`, 'color: #4f46e5; font-size: 16px; font-weight: bold;');
+  console.log(`%c🏦 Conciliador Bancário v${state.version}`, 'color: #4f46e5; font-size: 16px; font-weight: bold;');
   console.log('%cDesenvolvido por Ademir Varjão', 'color: #64748b;');
   console.log('%cLicença: MIT | 100% Open Source', 'color: #64748b;');
   
