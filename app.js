@@ -1,17 +1,17 @@
 /**
- * CONCILIADOR BANCÁRIO v0.7
+ * CONCILIADOR BANCÁRIO v0.7.1
  * 
  * @description Ferramenta open source de conciliação bancária automática
  * @author Ademir Varjão
  * @license MIT
- * @version 0.7.0
+ * @version 0.7.1
  * @year 2026
  * 
- * Novidades v0.7:
- * - Correção crítica na importação CSV
- * - Suporte a arquivos PDF (texto e imagem com OCR)
- * - Detecção inteligente de colunas CSV
- * - Melhor tratamento de erros
+ * Novidades v0.7.1:
+ * - Correção crítica de segurança XSS
+ * - Implementação de paginação para melhor performance
+ * - Otimização do algoritmo de matching
+ * - Validação de tipo MIME real
  */
 
 'use strict';
@@ -29,9 +29,11 @@ const state = {
   bank: '',
   pdfNotes: '',
   currency: 'BRL',
-  version: '0.7.0',
+  version: '0.7.1',
   lastUpdate: null,
-  ocrEnabled: false
+  ocrEnabled: false,
+  currentPage: 1,
+  itemsPerPage: 100
 };
 
 const CONFIG = {
@@ -40,7 +42,8 @@ const CONFIG = {
   maxFileSize: 10 * 1024 * 1024, // 10MB
   defaultToleranceDays: 2,
   defaultToleranceValue: 0.05,
-  autoSaveDelay: 500
+  autoSaveDelay: 500,
+  maxStringLengthForSimilarity: 80
 };
 
 // ============================================
@@ -84,7 +87,9 @@ const elements = {
   statBalance: $('#stat-balance'),
   statReconciled: $('#stat-reconciled-pct'),
   currencySelect: $('#currency-select'),
-  ocrToggle: $('#ocr-toggle')
+  ocrToggle: $('#ocr-toggle'),
+  paginationContainer: $('#pagination-container'),
+  pageInfo: $('#page-info')
 };
 
 // ============================================
@@ -227,11 +232,23 @@ const validators = {
     if (file.size > CONFIG.maxFileSize) {
       return { valid: false, error: `Arquivo muito grande (máx: ${CONFIG.maxFileSize / 1024 / 1024}MB)` };
     }
-    const validExtensions = ['.ofx', '.csv', '.json', '.pdf'];
-    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-    if (!validExtensions.includes(ext)) {
-      return { valid: false, error: 'Formato inválido. Use OFX, CSV, JSON ou PDF' };
+    
+    // Valida tipo MIME real
+    const validMimeTypes = [
+      'application/x-ofx',
+      'text/csv',
+      'application/json',
+      'application/pdf'
+    ];
+    
+    if (!validMimeTypes.includes(file.type)) {
+      // Verifica extensão como fallback (alguns browsers não detectam OFX)
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      if (ext !== '.ofx') {
+        return { valid: false, error: 'Tipo de arquivo inválido. Use OFX, CSV, JSON ou PDF' };
+      }
     }
+    
     return { valid: true };
   },
   
@@ -245,7 +262,10 @@ const validators = {
   
   sanitizeString(str) {
     if (!str) return '';
-    return str.toString().trim().replace(/[<>"']/g, '');
+    // Método seguro usando textContent
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 };
 
@@ -893,16 +913,14 @@ function renderDashboard() {
 }
 
 // ============================================
-// RENDERIZAÇÃO DE TRANSAÇÕES
+// PAGINAÇÃO
 // ============================================
 
-function renderTransactions() {
-  if (!elements.transactionsTable) return;
-  
+function getFilteredTransactions() {
   const term = elements.searchTransactions?.value.toLowerCase() || '';
   const filter = elements.filterStatus?.value || 'all';
   
-  const filtered = state.transactions.filter(t => {
+  return state.transactions.filter(t => {
     const matchesTerm = !term || 
       t.description.toLowerCase().includes(term) || 
       (t.account || '').toLowerCase().includes(term);
@@ -911,11 +929,86 @@ function renderTransactions() {
     
     return matchesTerm && matchesStatus;
   });
+}
+
+function renderPagination(currentPage, totalPages, totalItems) {
+  if (!elements.paginationContainer) return;
+  
+  if (totalPages <= 1) {
+    elements.paginationContainer.classList.add('hidden');
+    return;
+  }
+  
+  elements.paginationContainer.classList.remove('hidden');
+  
+  const startItem = (currentPage - 1) * state.itemsPerPage + 1;
+  const endItem = Math.min(currentPage * state.itemsPerPage, totalItems);
+  
+  elements.paginationContainer.innerHTML = `
+    <button 
+      id="prev-page" 
+      ${currentPage === 1 ? 'disabled' : ''}
+      class="btn btn-sm"
+    >← Anterior</button>
+    <span id="page-info">Página ${currentPage} de ${totalPages} (${startItem}-${endItem} de ${totalItems})</span>
+    <button 
+      id="next-page" 
+      ${currentPage === totalPages ? 'disabled' : ''}
+      class="btn btn-sm"
+    >Próximo →</button>
+  `;
+  
+  // Event listeners para botões
+  const prevBtn = $('#prev-page');
+  const nextBtn = $('#next-page');
+  
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      if (state.currentPage > 1) {
+        state.currentPage--;
+        renderTransactions();
+      }
+    });
+  }
+  
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      if (state.currentPage < totalPages) {
+        state.currentPage++;
+        renderTransactions();
+      }
+    });
+  }
+}
+
+// ============================================
+// RENDERIZAÇÃO DE TRANSAÇÕES
+// ============================================
+
+function renderTransactions() {
+  if (!elements.transactionsTable) return;
+  
+  const filtered = getFilteredTransactions();
+  const totalPages = Math.ceil(filtered.length / state.itemsPerPage);
+  
+  // Ajusta página atual se necessário
+  if (state.currentPage > totalPages && totalPages > 0) {
+    state.currentPage = totalPages;
+  }
+  if (state.currentPage < 1) {
+    state.currentPage = 1;
+  }
+  
+  // Calcula índices da página atual
+  const startIdx = (state.currentPage - 1) * state.itemsPerPage;
+  const endIdx = startIdx + state.itemsPerPage;
+  const pageItems = filtered.slice(startIdx, endIdx);
   
   elements.transactionsTable.innerHTML = '';
   
-  if (filtered.length === 0) {
+  if (pageItems.length === 0) {
     elements.transactionsTable.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">Nenhuma transação encontrada</td></tr>';
+    renderPagination(1, 1, 0);
     return;
   }
   
@@ -924,7 +1017,7 @@ function renderTransactions() {
   
   const fragment = document.createDocumentFragment();
   
-  filtered.forEach(t => {
+  pageItems.forEach(t => {
     const row = template.content.cloneNode(true);
     const tr = row.querySelector('tr');
     if (tr) tr.dataset.id = t.id;
@@ -966,7 +1059,7 @@ function renderTransactions() {
     
     const statusEl = row.querySelector('[data-field="status"]');
     if (statusEl) {
-      statusEl.textContent = t.status === 'matched' ? '✅ Conciliado' : '⌛ Pendente';
+      statusEl.textContent = t.status === 'matched' ? '✅ Conciliado' : '⏳ Pendente';
       statusEl.className = `status-badge status-${t.status}`;
     }
     
@@ -974,6 +1067,7 @@ function renderTransactions() {
   });
   
   elements.transactionsTable.appendChild(fragment);
+  renderPagination(state.currentPage, totalPages, filtered.length);
   updateBulkToolbar();
 }
 
@@ -1034,19 +1128,20 @@ function handleBulkDelete() {
 }
 
 // ============================================
-// CONCILIAÇÃO (MATCHING)
+// CONCILIAÇÃO (MATCHING) - OTIMIZADO
 // ============================================
 
 function calculateSimilarity(str1, str2) {
   if (!str1 || !str2) return 0;
   
-  const s1 = str1.toLowerCase();
-  const s2 = str2.toLowerCase();
+  // Limita comprimento das strings (Issue #4)
+  const s1 = str1.toLowerCase().slice(0, CONFIG.maxStringLengthForSimilarity);
+  const s2 = str2.toLowerCase().slice(0, CONFIG.maxStringLengthForSimilarity);
   
   if (s1 === s2) return 1;
   if (s1.includes(s2) || s2.includes(s1)) return 0.8;
   
-  // Algoritmo de Levenshtein
+  // Algoritmo de Levenshtein otimizado
   const matrix = [];
   
   for (let i = 0; i <= s2.length; i++) {
@@ -1104,15 +1199,15 @@ function runMatching() {
       state.ledgerEntries.forEach(ledger => {
         if (ledger.matched) return;
         
-        // 1. Verifica diferença de data
+        // Early stopping - verifica diferença de data ANTES (Issue #4)
         const diffDays = Math.abs((bank.date - ledger.date) / 86400000);
-        if (diffDays > daysTol) return;
+        if (diffDays > daysTol) return; // SKIP
         
-        // 2. Verifica diferença de valor
+        // Early stopping - verifica diferença de valor ANTES (Issue #4)
         const diffVal = Math.abs(bank.amount - ledger.value);
-        if (diffVal > valTol) return;
+        if (diffVal > valTol) return; // SKIP
         
-        // 3. Calcula score de similaridade
+        // SÓ AGORA calcula similaridade de descrição
         const dateSimilarity = 1 - (diffDays / daysTol);
         const valueSimilarity = 1 - (diffVal / (valTol || 0.01));
         const descSimilarity = calculateSimilarity(bank.description, ledger.description || '');
@@ -1444,13 +1539,19 @@ function setupEventListeners() {
     });
   }
   
-  // Busca e filtros
+  // Busca e filtros - reseta para primeira página ao filtrar
   if (elements.searchTransactions) {
-    elements.searchTransactions.addEventListener('input', debounce(renderTransactions, 300));
+    elements.searchTransactions.addEventListener('input', debounce(() => {
+      state.currentPage = 1;
+      renderTransactions();
+    }, 300));
   }
   
   if (elements.filterStatus) {
-    elements.filterStatus.addEventListener('change', renderTransactions);
+    elements.filterStatus.addEventListener('change', () => {
+      state.currentPage = 1;
+      renderTransactions();
+    });
   }
   
   // Seleção em lote
@@ -1624,7 +1725,7 @@ function loadSampleData() {
   showNotification('📦 Dados de exemplo carregados', 'success');
 }
 
-// Expor funções globais necessárias
+// Expõe funções globais necessárias
 window.removeAccount = removeAccount;
 
 // ============================================
