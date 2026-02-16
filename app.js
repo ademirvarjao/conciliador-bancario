@@ -33,7 +33,9 @@ const state = {
   lastUpdate: null,
   ocrEnabled: false,
   currentPage: 1,
-  itemsPerPage: 100
+  itemsPerPage: 100,
+  reconciliationReport: null,
+  previousBalance: null
 };
 
 const CONFIG = {
@@ -120,22 +122,28 @@ const formatPercent = (val) => {
 
 function showNotification(message, type = 'info') {
   const container = $('#toast-container') || createToastContainer();
-  
+
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  
+
   const icons = {
     success: '✅',
     error: '❌',
     warning: '⚠️',
     info: 'ℹ️'
   };
-  
-  toast.innerHTML = `
-    <span class="toast-icon">${icons[type] || icons.info}</span>
-    <span class="toast-message">${message}</span>
-  `;
-  
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'toast-icon';
+  iconEl.textContent = icons[type] || icons.info;
+
+  const messageEl = document.createElement('span');
+  messageEl.className = 'toast-message';
+  messageEl.textContent = message;
+
+  toast.appendChild(iconEl);
+  toast.appendChild(messageEl);
+
   container.appendChild(toast);
   
   // Animação de entrada
@@ -162,26 +170,39 @@ function createToastContainer() {
 // ============================================
 
 function parseAmount(value, isOFX = false) {
-  if (!value) return 0;
-  
+  if (value === null || value === undefined || value === '') return 0;
+
   let str = value.toString().trim().replace(/\s/g, '');
-  
-  // Formato OFX: sempre ponto decimal
-  if (isOFX) {
-    return parseFloat(str) || 0;
+
+  // Trata formato contábil com parênteses: (123,45)
+  let isNegativeByParentheses = false;
+  if (/^\(.*\)$/.test(str)) {
+    isNegativeByParentheses = true;
+    str = str.slice(1, -1);
   }
-  
+
   // Remove símbolos monetários
-  str = str.replace(/[R$\u20ac\xa3\xa5USD]/gi, '');
-  
+  str = str.replace(/[R$€£¥USD]/gi, '');
+
+  // Formato OFX: geralmente ponto decimal
+  if (isOFX) {
+    const parsed = parseFloat(str.replace(',', '.')) || 0;
+    return isNegativeByParentheses ? -Math.abs(parsed) : parsed;
+  }
+
+  // Suporta sinal no final: 123,45-
+  if (/-$/.test(str)) {
+    str = `-${str.slice(0, -1)}`;
+  }
+
   // Detecta formato BR vs EN
   const hasComma = str.includes(',');
   const hasDot = str.includes('.');
-  
+
   if (hasComma && hasDot) {
     const lastComma = str.lastIndexOf(',');
     const lastDot = str.lastIndexOf('.');
-    
+
     if (lastComma > lastDot) {
       // Formato BR: 1.234,56
       str = str.replace(/\./g, '').replace(',', '.');
@@ -193,30 +214,47 @@ function parseAmount(value, isOFX = false) {
     // Só tem vírgula - assume BR
     str = str.replace(',', '.');
   }
-  
+
   const result = parseFloat(str);
-  return isNaN(result) ? 0 : result;
+  if (isNaN(result)) return 0;
+  return isNegativeByParentheses ? -Math.abs(result) : result;
 }
 
 function parseDate(val) {
   if (!val) return null;
-  
+
   const s = val.toString().trim();
-  
-  // YYYYMMDD (formato OFX)
-  if (/^\d{8}$/.test(s)) {
-    const year = s.slice(0, 4);
-    const month = s.slice(4, 6);
-    const day = s.slice(6, 8);
+
+  // YYYYMMDD ou YYYYMMDDHHMMSS (formato OFX)
+  const ofxMatch = s.match(/^(\d{8})/);
+  if (ofxMatch) {
+    const base = ofxMatch[1];
+    const year = base.slice(0, 4);
+    const month = base.slice(4, 6);
+    const day = base.slice(6, 8);
     return new Date(`${year}-${month}-${day}T12:00:00`);
   }
-  
+
   // DD/MM/YYYY ou DD-MM-YYYY (formato BR)
   if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(s)) {
     const [day, month, year] = s.split(/[\/\-]/);
     return new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T12:00:00`);
   }
-  
+
+  // DD/MM/YY ou DD-MM-YY
+  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2}$/.test(s)) {
+    const [day, month, year] = s.split(/[\/\-]/);
+    const fullYear = Number(year) >= 70 ? `19${year}` : `20${year}`;
+    return new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T12:00:00`);
+  }
+
+  // DD/MM ou DD-MM (assume ano atual) - comum em PDFs
+  if (/^\d{1,2}[\/\-]\d{1,2}$/.test(s)) {
+    const [day, month] = s.split(/[\/\-]/);
+    const year = new Date().getFullYear();
+    return new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T12:00:00`);
+  }
+
   // Tenta ISO e outros formatos
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
@@ -232,23 +270,31 @@ const validators = {
     if (file.size > CONFIG.maxFileSize) {
       return { valid: false, error: `Arquivo muito grande (máx: ${CONFIG.maxFileSize / 1024 / 1024}MB)` };
     }
-    
-    // Valida tipo MIME real
-    const validMimeTypes = [
+
+    const fileName = file.name.toLowerCase();
+    const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '';
+
+    const validExts = new Set(['.ofx', '.csv', '.json', '.pdf']);
+    if (ext && validExts.has(ext)) return { valid: true };
+    if (ext && !validExts.has(ext)) {
+      return { valid: false, error: 'Extensão inválida. Use OFX, CSV, JSON ou PDF' };
+    }
+
+    // Fallback por MIME quando não há extensão
+    const validMimeTypes = new Set([
       'application/x-ofx',
+      'application/ofx',
       'text/csv',
+      'application/csv',
+      'application/vnd.ms-excel',
       'application/json',
       'application/pdf'
-    ];
-    
-    if (!validMimeTypes.includes(file.type)) {
-      // Verifica extensão como fallback (alguns browsers não detectam OFX)
-      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-      if (ext !== '.ofx') {
-        return { valid: false, error: 'Tipo de arquivo inválido. Use OFX, CSV, JSON ou PDF' };
-      }
+    ]);
+
+    if (!validMimeTypes.has(file.type)) {
+      return { valid: false, error: 'Tipo de arquivo inválido. Use OFX, CSV, JSON ou PDF' };
     }
-    
+
     return { valid: true };
   },
   
@@ -336,126 +382,189 @@ function loadState() {
 // PARSERS DE ARQUIVOS
 // ============================================
 
-function parseCSV(content) {
-  const lines = content.split(/\r?\n/).filter(l => l.trim());
-  if (!lines.length) return [];
-  
-  // Detecta delimitador
-  const firstLine = lines[0];
-  const delimiter = firstLine.split(';').length > firstLine.split(',').length ? ';' : ',';
-  
-  return lines.map(line => {
-    const parts = [];
-    let current = '';
+function detectCSVDelimiter(content) {
+  const sample = content.split(/\r?\n/).slice(0, 10).join('\n');
+  const candidates = [';', ',', '\t'];
+
+  let best = ';';
+  let bestScore = -1;
+
+  candidates.forEach(delimiter => {
     let inQuotes = false;
-    
-    for (let char of line) {
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === delimiter && !inQuotes) {
-        parts.push(current.trim().replace(/^"|"$/g, ''));
-        current = '';
-      } else {
-        current += char;
-      }
+    let count = 0;
+
+    for (const char of sample) {
+      if (char === '"') inQuotes = !inQuotes;
+      else if (!inQuotes && char === delimiter) count += 1;
     }
-    
-    parts.push(current.trim().replace(/^"|"$/g, ''));
-    return parts;
+
+    if (count > bestScore) {
+      best = delimiter;
+      bestScore = count;
+    }
   });
+
+  return best;
+}
+
+function parseCSV(content) {
+  if (!content || !content.trim()) return [];
+
+  const normalized = content.replace(/^\uFEFF/, '');
+  const delimiter = detectCSVDelimiter(normalized);
+
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    const nextChar = normalized[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      row.push(field.trim());
+      field = '';
+      continue;
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && nextChar === '\n') i += 1;
+      row.push(field.trim());
+      if (row.some(cell => cell !== '')) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+
+    field += char;
+  }
+
+  row.push(field.trim());
+  if (row.some(cell => cell !== '')) rows.push(row);
+
+  return rows;
 }
 
 /**
  * Detecta quais colunas contêm data, descrição e valor em um CSV
  */
 function detectCSVColumns(rows) {
-  if (rows.length < 2) return null;
-  
-  const header = rows[0].map(h => h.toLowerCase());
-  const sampleRow = rows[1];
-  
+  if (rows.length < 1) return null;
+
+  const firstRow = rows[0] || [];
+  const header = firstRow.map(h => (h || '').toLowerCase());
+  const dataSamples = rows.slice(0, Math.min(rows.length, 15));
+
   // Palavras-chave para identificação
-  const dateKeywords = ['data', 'date', 'dt', 'dia'];
-  const descKeywords = ['descri', 'historic', 'memo', 'name', 'desc'];
+  const dateKeywords = ['data', 'date', 'dt', 'dia', 'lancamento', 'lançamento'];
+  const descKeywords = ['descri', 'historic', 'memo', 'name', 'desc', 'histórico'];
   const amountKeywords = ['valor', 'amount', 'vlr', 'value', 'montante', 'total'];
-  
-  let dateCol = -1, descCol = -1, amountCol = -1;
-  
+
+  let dateCol = -1;
+  let descCol = -1;
+  let amountCol = -1;
+
   // Tenta identificar por cabeçalho
   header.forEach((col, idx) => {
-    if (dateCol === -1 && dateKeywords.some(k => col.includes(k))) {
-      dateCol = idx;
-    }
-    if (descCol === -1 && descKeywords.some(k => col.includes(k))) {
-      descCol = idx;
-    }
-    if (amountCol === -1 && amountKeywords.some(k => col.includes(k))) {
-      amountCol = idx;
-    }
+    if (dateCol === -1 && dateKeywords.some(k => col.includes(k))) dateCol = idx;
+    if (descCol === -1 && descKeywords.some(k => col.includes(k))) descCol = idx;
+    if (amountCol === -1 && amountKeywords.some(k => col.includes(k))) amountCol = idx;
   });
-  
-  // Se não encontrou por cabeçalho, tenta por análise de dados
+
+  const maxCols = Math.max(...dataSamples.map(r => r.length), 0);
+
+  // Se não encontrou por cabeçalho, pontua por amostras
   if (dateCol === -1 || descCol === -1 || amountCol === -1) {
-    sampleRow.forEach((cell, idx) => {
-      const val = cell.trim();
-      
-      // Detecta data
-      if (dateCol === -1 && (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(val) || /^\d{8}$/.test(val))) {
-        dateCol = idx;
-      }
-      
-      // Detecta valor monetário
-      if (amountCol === -1 && /^[R$\-\+]?\s*[\d\.,]+$/.test(val)) {
-        const parsed = parseAmount(val);
-        if (!isNaN(parsed) && parsed !== 0) {
-          amountCol = idx;
+    const scores = Array.from({ length: maxCols }, () => ({ date: 0, amount: 0, desc: 0 }));
+
+    dataSamples.forEach(sample => {
+      sample.forEach((cell, idx) => {
+        const val = (cell || '').trim();
+        if (!val) return;
+
+        if (/^\d{1,2}[\/\-]\d{1,2}([\/\-]\d{2,4})?$/.test(val) || /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(val) || /^\d{8}/.test(val)) {
+          scores[idx].date += 2;
         }
-      }
-      
-      // Descrição: coluna com texto longo
-      if (descCol === -1 && val.length > 10 && !/^\d+$/.test(val)) {
-        descCol = idx;
-      }
+
+        if (/^[R$\-\+\(]?\s*[\d\.,]+\)?\-?$/.test(val)) {
+          const parsed = parseAmount(val);
+          if (!isNaN(parsed)) scores[idx].amount += 2;
+        }
+
+        if (val.length > 5 && !/^[\d\W]+$/.test(val)) {
+          scores[idx].desc += 1;
+        }
+      });
     });
+
+    const pickBest = (key, current) => {
+      if (current !== -1) return current;
+      let bestIdx = -1;
+      let bestVal = -1;
+      scores.forEach((score, idx) => {
+        if (score[key] > bestVal) {
+          bestVal = score[key];
+          bestIdx = idx;
+        }
+      });
+      return bestVal > 0 ? bestIdx : -1;
+    };
+
+    dateCol = pickBest('date', dateCol);
+    amountCol = pickBest('amount', amountCol);
+    descCol = pickBest('desc', descCol);
   }
-  
+
   // Validação: precisa ter pelo menos data e valor
   if (dateCol !== -1 && amountCol !== -1) {
-    // Se não achou descrição, usa a primeira coluna de texto
+    // Se não achou descrição, usa a primeira coluna texto útil
     if (descCol === -1) {
-      for (let i = 0; i < sampleRow.length; i++) {
-        if (i !== dateCol && i !== amountCol && sampleRow[i].trim()) {
+      const baseRow = rows.find(r => r.length > Math.max(dateCol, amountCol)) || firstRow;
+      for (let i = 0; i < baseRow.length; i++) {
+        const val = (baseRow[i] || '').trim();
+        if (i !== dateCol && i !== amountCol && val) {
           descCol = i;
           break;
         }
       }
     }
-    
+
     return { dateCol, descCol, amountCol };
   }
-  
+
   return null;
 }
 
 function parseOFX(content) {
   const transactions = [];
-  
+
   try {
-    const blocks = content.split('<STMTTRN>').slice(1);
-    
+    const blocks = content.split(/<STMTTRN>/i).slice(1);
+
     blocks.forEach(block => {
       const getTag = (tag) => {
-        const match = block.match(new RegExp(`<${tag}>([^<\\r\\n]+)`));
+        const match = block.match(new RegExp(`<${tag}>([^<\r\n]+)`, 'i'));
         return match ? match[1].trim() : '';
       };
-      
+
       const dateStr = getTag('DTPOSTED');
       const amountStr = getTag('TRNAMT');
       const description = getTag('MEMO') || getTag('NAME') || 'Sem descrição';
-      
+
       const date = parseDate(dateStr);
       const amount = parseAmount(amountStr, true);
-      
+
       if (date && !isNaN(amount)) {
         transactions.push({
           date,
@@ -469,7 +578,7 @@ function parseOFX(content) {
     console.error('Erro ao parsear OFX:', e);
     showNotification('Erro ao processar arquivo OFX', 'error');
   }
-  
+
   return transactions;
 }
 
@@ -585,57 +694,77 @@ function loadTesseract() {
   });
 }
 
-/**
- * Processa PDF e tenta extrair transações
- */
+function detectBalanceColumn(rows) {
+  if (!rows || rows.length === 0) return -1;
+  const header = (rows[0] || []).map(c => (c || '').toLowerCase());
+  return header.findIndex(col => /saldo|balance|running/i.test(col));
+}
+
+function extractPreviousBalanceFromRows(rows, columns, hasHeader = true) {
+  const balanceCol = detectBalanceColumn(rows);
+  if (balanceCol === -1) return null;
+
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const firstValid = dataRows.find(r => r.length > Math.max(columns.dateCol, columns.amountCol, balanceCol));
+  if (!firstValid) return null;
+
+  const amount = parseAmount(firstValid[columns.amountCol]);
+  const runningBalance = parseAmount(firstValid[balanceCol]);
+  if (isNaN(amount) || isNaN(runningBalance)) return null;
+
+  return runningBalance - amount;
+}
+
+function parseTransactionsFromPDFText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const transactions = [];
+  let detectedPreviousBalance = null;
+
+  const linePattern = /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([\(\)\-\+]?\s*R?\$?\s*[\d\.,]+\-?)\s*(?:([\(\)\-\+]?\s*R?\$?\s*[\d\.,]+\-?))?$/i;
+
+  lines.forEach(line => {
+    const match = line.match(linePattern);
+    if (!match) return;
+
+    const date = parseDate(match[1]);
+    const description = validators.sanitizeString(match[2]);
+    const amount = parseAmount(match[3]);
+    const maybeRunningBalance = match[4] ? parseAmount(match[4]) : null;
+
+    if (!date || !description || isNaN(amount)) return;
+
+    transactions.push({ date, description, amount, status: 'pending' });
+
+    if (detectedPreviousBalance === null && maybeRunningBalance !== null && !isNaN(maybeRunningBalance)) {
+      detectedPreviousBalance = maybeRunningBalance - amount;
+    }
+  });
+
+  return { transactions, detectedPreviousBalance };
+}
+
 async function processPDF(file, useOCR = false) {
   try {
     let text;
-    
+
     if (useOCR || state.ocrEnabled) {
       showNotification('🔍 Iniciando OCR... Isso pode levar alguns minutos.', 'info');
       text = await extractTextWithOCR(file);
     } else {
       text = await extractTextFromPDF(file);
     }
-    
+
     if (!text || text.trim().length < 50) {
       showNotification('PDF parece ser uma imagem. Ative o OCR e tente novamente.', 'warning');
-      return [];
+      return { transactions: [], detectedPreviousBalance: null };
     }
-    
-    // Tenta detectar formato de extrato bancário
-    const lines = text.split('\n').filter(l => l.trim());
-    const transactions = [];
-    
-    // Padrões comuns de extrato
-    const patterns = [
-      // DD/MM/YYYY Descrição 1.234,56
-      /(\d{2}\/\d{2}\/\d{4})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi,
-      // DD/MM Descrição Valor
-      /(\d{2}\/\d{2})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi
-    ];
-    
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        const date = parseDate(match[1]);
-        const description = validators.sanitizeString(match[2]);
-        const amount = parseAmount(match[3]);
-        
-        if (date && description && !isNaN(amount)) {
-          transactions.push({ date, description, amount, status: 'pending' });
-        }
-      }
-      
-      if (transactions.length > 0) break;
-    }
-    
-    return transactions;
+
+    const parsed = parseTransactionsFromPDFText(text);
+    return parsed;
   } catch (e) {
     console.error('Erro ao processar PDF:', e);
     showNotification(e.message || 'Erro ao processar PDF', 'error');
-    return [];
+    return { transactions: [], detectedPreviousBalance: null };
   }
 }
 
@@ -651,6 +780,7 @@ async function processUploadedFiles(files) {
   
   let allNew = [];
   let errors = [];
+  let detectedPreviousBalance = null;
   
   elements.parseFiles.disabled = true;
   elements.parseFiles.textContent = 'Processando...';
@@ -667,10 +797,13 @@ async function processUploadedFiles(files) {
       
       if (fileName.endsWith('.pdf')) {
         showNotification(`📄 Processando PDF: ${file.name}`, 'info');
-        const pdfTransactions = await processPDF(file, state.ocrEnabled);
-        allNew.push(...pdfTransactions);
+        const pdfResult = await processPDF(file, state.ocrEnabled);
+        allNew.push(...pdfResult.transactions);
+        if (detectedPreviousBalance === null && pdfResult.detectedPreviousBalance !== null) {
+          detectedPreviousBalance = pdfResult.detectedPreviousBalance;
+        }
         
-        if (pdfTransactions.length === 0) {
+        if (pdfResult.transactions.length === 0) {
           errors.push(`${file.name}: Nenhuma transação encontrada no PDF`);
         }
         
@@ -685,7 +818,7 @@ async function processUploadedFiles(files) {
       } else if (fileName.endsWith('.csv')) {
         const rows = parseCSV(text);
         
-        if (rows.length < 2) {
+        if (rows.length < 1) {
           errors.push(`${file.name}: CSV vazio ou inválido`);
           continue;
         }
@@ -701,11 +834,16 @@ async function processUploadedFiles(files) {
         const { dateCol, descCol, amountCol } = columns;
         
         // Determina se primeira linha é cabeçalho
-        const hasHeader = rows[0].some(cell => 
-          /data|descri|valor|amount/i.test(cell)
+        const hasHeader = (rows[0] || []).some(cell =>
+          /data|descri|valor|amount|hist|memo|conta|account/i.test((cell || '').toLowerCase())
         );
         
         const dataRows = hasHeader ? rows.slice(1) : rows;
+
+        if (detectedPreviousBalance === null) {
+          const prev = extractPreviousBalanceFromRows(rows, columns, hasHeader);
+          if (prev !== null && !isNaN(prev)) detectedPreviousBalance = prev;
+        }
         
         dataRows.forEach(r => {
           if (r.length <= Math.max(dateCol, descCol, amountCol)) return;
@@ -751,34 +889,34 @@ async function processUploadedFiles(files) {
       status: t.status || 'pending',
       importedAt: new Date().toISOString()
     }));
-    
-    // Previne duplicatas
-    const existing = new Set(
-      state.transactions.map(t => {
-        const dateStr = t.date?.toISOString().split('T')[0] || '';
-        return `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
-      })
-    );
-    
-    const uniqueNew = withMetadata.filter(t => {
-      const dateStr = t.date?.toISOString().split('T')[0] || '';
-      const key = `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
-      return !existing.has(key);
-    });
-    
-    state.transactions.push(...uniqueNew);
-    
+
+    // Mantém todas as linhas importadas (inclusive repetições legítimas)
+    const remainingCapacity = Math.max(0, CONFIG.maxTransactions - state.transactions.length);
+    const toInsert = withMetadata.slice(0, remainingCapacity);
+
+    state.transactions.push(...toInsert);
+
     // Ordena por data (mais recente primeiro)
     state.transactions.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
-    
+
+    // Garante visualização de todos os itens recém-importados
+    state.currentPage = 1;
+    if (elements.searchTransactions) elements.searchTransactions.value = '';
+    if (elements.filterStatus) elements.filterStatus.value = 'all';
+
     saveState();
     renderTransactions();
     
     // Notificação de sucesso
-    const duplicates = allNew.length - uniqueNew.length;
-    let msg = `✅ ${uniqueNew.length} transação(ões) importada(s) com sucesso!`;
-    if (duplicates > 0) {
-      msg += ` (${duplicates} duplicata(s) ignorada(s))`;
+    const ignoredByCapacity = allNew.length - toInsert.length;
+    let msg = `✅ ${toInsert.length} transação(ões) importada(s) com sucesso!`;
+    if (ignoredByCapacity > 0) {
+      msg += ` (${ignoredByCapacity} ignorada(s) por limite de ${CONFIG.maxTransactions})`;
+    }
+
+    if (detectedPreviousBalance !== null && !isNaN(detectedPreviousBalance)) {
+      state.previousBalance = detectedPreviousBalance;
+      msg += ` | Saldo anterior identificado: ${formatCurrency(detectedPreviousBalance)}`;
     }
     
     showNotification(msg, 'success');
@@ -877,7 +1015,8 @@ function calculateMetrics() {
     total: state.transactions.length,
     reconciled: 0,
     pending: 0,
-    reconciledPct: 0
+    reconciledPct: 0,
+    previousBalance: typeof state.previousBalance === 'number' ? state.previousBalance : null
   };
   
   state.transactions.forEach(t => {
@@ -908,6 +1047,9 @@ function renderDashboard() {
   if (elements.statBalance) {
     elements.statBalance.textContent = formatCurrency(metrics.balance);
     elements.statBalance.className = metrics.balance >= 0 ? 'stat-value text-success' : 'stat-value text-danger';
+    elements.statBalance.title = metrics.previousBalance !== null
+      ? `Saldo anterior identificado: ${formatCurrency(metrics.previousBalance)}`
+      : 'Saldo anterior não identificado';
   }
   if (elements.statReconciled) elements.statReconciled.textContent = formatPercent(metrics.reconciledPct);
 }
@@ -1059,7 +1201,8 @@ function renderTransactions() {
     
     const statusEl = row.querySelector('[data-field="status"]');
     if (statusEl) {
-      statusEl.textContent = t.status === 'matched' ? '✅ Conciliado' : '⏳ Pendente';
+      const matchLabel = t.matchType ? ` (${t.matchType})` : '';
+      statusEl.textContent = t.status === 'matched' ? `✅ Conciliado${matchLabel}` : '⏳ Pendente';
       statusEl.className = `status-badge status-${t.status}`;
     }
     
@@ -1172,6 +1315,36 @@ function calculateSimilarity(str1, str2) {
   return maxLen === 0 ? 1 : (maxLen - distance) / maxLen;
 }
 
+function normalizeHistory(description) {
+  return (description || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(pagamento|pgto|pix|ted|doc|debito|credito|transferencia|transf|lote|parcela)\b/g, ' ')
+    .replace(/\b[a-z]\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clearPreviousReconciliation() {
+  state.transactions.forEach(transaction => {
+    transaction.status = 'pending';
+    delete transaction.matchedWith;
+    delete transaction.matchType;
+    delete transaction.reconciliationId;
+    delete transaction.matchScore;
+  });
+
+  state.ledgerEntries.forEach(entry => {
+    entry.matched = false;
+    delete entry.matchType;
+    delete entry.reconciliationId;
+  });
+
+  state.reconciliationReport = null;
+}
+
 function runMatching() {
   if (state.ledgerEntries.length === 0) {
     showNotification('⚠️ Carregue primeiro o arquivo de Razão Contábil', 'warning');
@@ -1182,59 +1355,216 @@ function runMatching() {
   
   const daysTol = parseInt(elements.toleranceDays?.value) || CONFIG.defaultToleranceDays;
   const valTol = parseFloat(elements.toleranceValue?.value) || CONFIG.defaultToleranceValue;
-  
+
+  clearPreviousReconciliation();
+
   elements.runReconciliation.disabled = true;
   elements.runReconciliation.textContent = 'Processando...';
   
-  let matchCount = 0;
-  const matches = [];
+  const matchingResult = {
+    exactMatches: [],
+    toleranceMatches: [],
+    fuzzyMatches: [],
+    groupMatches: []
+  };
   
   try {
-    state.transactions.forEach(bank => {
-      if (bank.status === 'matched') return;
-      
+    const getPendingTransactions = () => state.transactions.filter(bank => bank.status !== 'matched');
+    const getPendingLedgers = () => state.ledgerEntries.filter(ledger => !ledger.matched);
+    let reconciliationId = Date.now();
+
+    const applyMatch = (bank, ledger, type, extra = {}) => {
+      bank.status = 'matched';
+      bank.account = ledger.account || bank.account;
+      bank.matchedWith = ledger.id;
+      bank.matchType = type;
+      bank.reconciliationId = reconciliationId;
+      bank.matchScore = extra.score || 1;
+      ledger.matched = true;
+      ledger.matchType = type;
+      ledger.reconciliationId = reconciliationId;
+      reconciliationId += 1;
+    };
+
+    // [1/3] Conciliação exata (mesmo valor e mesma data)
+    getPendingTransactions().forEach(bank => {
+      const match = getPendingLedgers().find(ledger => {
+        const diffVal = Math.abs(bank.amount - ledger.value);
+        const sameDate = bank.date?.toDateString() === ledger.date?.toDateString();
+        return diffVal <= valTol && sameDate;
+      });
+
+      if (!match) return;
+
+      applyMatch(bank, match, 'EXATA', { score: 1 });
+      matchingResult.exactMatches.push({
+        type: 'EXATA',
+        bankId: bank.id,
+        ledgerId: match.id,
+        value: bank.amount,
+        dateBank: bank.date,
+        dateLedger: match.date
+      });
+    });
+
+    // [2/3] Conciliação com tolerância de dias (mesmo valor, datas próximas)
+    getPendingTransactions().forEach(bank => {
+      const match = getPendingLedgers().find(ledger => {
+        const diffVal = Math.abs(bank.amount - ledger.value);
+        const diffDays = Math.abs((bank.date - ledger.date) / 86400000);
+        return diffVal <= valTol && diffDays <= daysTol;
+      });
+
+      if (!match) return;
+
+      const diffDays = Math.abs((bank.date - match.date) / 86400000);
+      applyMatch(bank, match, 'TOLERANCIA', {
+        score: Math.max(0.7, 1 - (diffDays / Math.max(daysTol, 1)))
+      });
+      matchingResult.toleranceMatches.push({
+        type: 'TOLERANCIA',
+        bankId: bank.id,
+        ledgerId: match.id,
+        value: bank.amount,
+        differenceDays: diffDays,
+        dateBank: bank.date,
+        dateLedger: match.date
+      });
+    });
+
+    // [3/3] Conciliação fuzzy (similaridade de descrição + valor)
+    getPendingTransactions().forEach(bank => {
       let bestMatch = null;
       let bestScore = 0;
-      
-      state.ledgerEntries.forEach(ledger => {
-        if (ledger.matched) return;
-        
-        // Early stopping - verifica diferença de data ANTES (Issue #4)
-        const diffDays = Math.abs((bank.date - ledger.date) / 86400000);
-        if (diffDays > daysTol) return; // SKIP
-        
-        // Early stopping - verifica diferença de valor ANTES (Issue #4)
+
+      getPendingLedgers().forEach(ledger => {
         const diffVal = Math.abs(bank.amount - ledger.value);
-        if (diffVal > valTol) return; // SKIP
-        
-        // SÓ AGORA calcula similaridade de descrição
-        const dateSimilarity = 1 - (diffDays / daysTol);
-        const valueSimilarity = 1 - (diffVal / (valTol || 0.01));
-        const descSimilarity = calculateSimilarity(bank.description, ledger.description || '');
-        
-        const score = (dateSimilarity * 0.3) + (valueSimilarity * 0.5) + (descSimilarity * 0.2);
-        
-        if (score > bestScore && score > 0.7) {
+        if (diffVal > valTol) return;
+
+        const score = calculateSimilarity(bank.description, ledger.description || '');
+        if (score > bestScore && score >= 0.6) {
           bestScore = score;
           bestMatch = ledger;
         }
       });
-      
-      if (bestMatch) {
-        bank.status = 'matched';
-        bank.account = bestMatch.account || bank.account;
-        bank.matchedWith = bestMatch.id;
-        bank.matchScore = bestScore;
-        bestMatch.matched = true;
-        matches.push({ bank, ledger: bestMatch, score: bestScore });
-        matchCount++;
-      }
+
+      if (!bestMatch) return;
+
+      applyMatch(bank, bestMatch, 'FUZZY', { score: bestScore });
+      matchingResult.fuzzyMatches.push({
+        type: 'FUZZY',
+        bankId: bank.id,
+        ledgerId: bestMatch.id,
+        value: bank.amount,
+        similarity: bestScore,
+        descriptionBank: bank.description,
+        descriptionLedger: bestMatch.description
+      });
     });
+
+    // [4/4] Conciliação em grupo por histórico semelhante (N:N)
+    const bankGroups = new Map();
+    const ledgerGroups = new Map();
+
+    getPendingTransactions().forEach(bank => {
+      const key = normalizeHistory(bank.description);
+      if (!key) return;
+      if (!bankGroups.has(key)) bankGroups.set(key, []);
+      bankGroups.get(key).push(bank);
+    });
+
+    getPendingLedgers().forEach(ledger => {
+      const key = normalizeHistory(ledger.description);
+      if (!key) return;
+      if (!ledgerGroups.has(key)) ledgerGroups.set(key, []);
+      ledgerGroups.get(key).push(ledger);
+    });
+
+    bankGroups.forEach((bankGroup, bankKey) => {
+      if (bankGroup.length < 2) return;
+
+      const totalBank = bankGroup.reduce((sum, item) => sum + item.amount, 0);
+      const minBankDate = Math.min(...bankGroup.map(i => i.date?.getTime() || 0));
+      const maxBankDate = Math.max(...bankGroup.map(i => i.date?.getTime() || 0));
+
+      let chosenLedgerKey = null;
+      let chosenScore = 0;
+
+      ledgerGroups.forEach((ledgerGroup, ledgerKey) => {
+        if (ledgerGroup.length < 2) return;
+        const sim = calculateSimilarity(bankKey, ledgerKey);
+        if (sim < 0.65) return;
+
+        const totalLedger = ledgerGroup.reduce((sum, item) => sum + item.value, 0);
+        const diffVal = Math.abs(totalBank - totalLedger);
+        if (diffVal > valTol * Math.max(bankGroup.length, ledgerGroup.length)) return;
+
+        const minLedgerDate = Math.min(...ledgerGroup.map(i => i.date?.getTime() || 0));
+        const maxLedgerDate = Math.max(...ledgerGroup.map(i => i.date?.getTime() || 0));
+        const diffDays = Math.abs((minBankDate - minLedgerDate) / 86400000);
+        const diffDays2 = Math.abs((maxBankDate - maxLedgerDate) / 86400000);
+        if (Math.max(diffDays, diffDays2) > daysTol) return;
+
+        if (sim > chosenScore) {
+          chosenScore = sim;
+          chosenLedgerKey = ledgerKey;
+        }
+      });
+
+      if (!chosenLedgerKey) return;
+      const ledgerGroup = ledgerGroups.get(chosenLedgerKey);
+      if (!ledgerGroup || ledgerGroup.some(item => item.matched) || bankGroup.some(item => item.status === 'matched')) return;
+
+      const groupReconId = reconciliationId;
+      reconciliationId += 1;
+
+      bankGroup.forEach(bank => {
+        bank.status = 'matched';
+        bank.matchType = 'GRUPO';
+        bank.reconciliationId = groupReconId;
+        bank.matchScore = chosenScore;
+      });
+
+      ledgerGroup.forEach(ledger => {
+        ledger.matched = true;
+        ledger.matchType = 'GRUPO';
+        ledger.reconciliationId = groupReconId;
+      });
+
+      matchingResult.groupMatches.push({
+        type: 'GRUPO',
+        reconciliationId: groupReconId,
+        bankCount: bankGroup.length,
+        ledgerCount: ledgerGroup.length,
+        similarity: chosenScore,
+        bankTotal: bankGroup.reduce((sum, i) => sum + i.amount, 0),
+        ledgerTotal: ledgerGroup.reduce((sum, i) => sum + i.value, 0),
+        bankKey,
+        ledgerKey: chosenLedgerKey
+      });
+    });
+
+    const matchCount = matchingResult.exactMatches.length + matchingResult.toleranceMatches.length + matchingResult.fuzzyMatches.length + matchingResult.groupMatches.length;
+
+
+    state.reconciliationReport = {
+      generatedAt: new Date().toISOString(),
+      toleranceDays: daysTol,
+      toleranceValue: valTol,
+      totals: {
+        bankTransactions: state.transactions.length,
+        ledgerEntries: state.ledgerEntries.length,
+        matchedTransactions: state.transactions.filter(t => t.status === 'matched').length,
+        pendingTransactions: state.transactions.filter(t => t.status !== 'matched').length,
+        pendingLedgerEntries: state.ledgerEntries.filter(l => !l.matched).length
+      },
+      matches: matchingResult
+    };
     
     saveState();
     renderTransactions();
     
-    const msg = `🎯 ${matchCount} conciliação(ões) automática(s) realizada(s)!`;
+    const msg = `🎯 ${matchCount} conciliação(ões): ${matchingResult.exactMatches.length} exata(s), ${matchingResult.toleranceMatches.length} tolerância, ${matchingResult.fuzzyMatches.length} fuzzy, ${matchingResult.groupMatches.length} em grupo.`;
     showNotification(msg, 'success');
     
     if (elements.reconciliationSummary) {
@@ -1243,7 +1573,7 @@ function runMatching() {
       elements.reconciliationSummary.classList.remove('hidden');
     }
     
-    console.log('Matches encontrados:', matches);
+    console.log('Relatório de conciliação:', state.reconciliationReport);
     
   } catch (e) {
     console.error('Erro na conciliação:', e);
@@ -1260,21 +1590,40 @@ async function loadLedgerFile(file) {
     showNotification(validation.error, 'error');
     return;
   }
-  
+
   try {
     const text = await file.text();
     const rows = parseCSV(text);
-    
+
+    if (rows.length < 1) {
+      showNotification('Arquivo de razão vazio ou inválido', 'warning');
+      return;
+    }
+
+    const columns = detectCSVColumns(rows);
+    if (!columns) {
+      showNotification('Não foi possível detectar colunas do razão (data/descrição/valor)', 'error');
+      return;
+    }
+
+    const header = rows[0].map(cell => cell.toLowerCase());
+    const hasHeader = header.some(cell => /data|descri|valor|amount|conta|account/i.test(cell));
+    const accountCol = header.findIndex(cell => /conta|account|plano/i.test(cell));
+
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+
     state.ledgerEntries = [];
-    
-    rows.slice(1).forEach(r => {
-      if (r.length < 3) return;
-      
-      const date = parseDate(r[0]);
-      const description = validators.sanitizeString(r[1]);
-      const value = parseAmount(r[2]);
-      const account = r[3] ? validators.sanitizeString(r[3]) : '';
-      
+
+    dataRows.forEach(r => {
+      if (r.length <= Math.max(columns.dateCol, columns.amountCol, columns.descCol)) return;
+
+      const date = parseDate(r[columns.dateCol]);
+      const description = validators.sanitizeString(r[columns.descCol] || 'Sem descrição');
+      const value = parseAmount(r[columns.amountCol]);
+      const account = accountCol >= 0 && r[accountCol]
+        ? validators.sanitizeString(r[accountCol])
+        : '';
+
       if (date && !isNaN(value)) {
         state.ledgerEntries.push({
           id: crypto.randomUUID(),
@@ -1286,10 +1635,14 @@ async function loadLedgerFile(file) {
         });
       }
     });
-    
+
+    clearPreviousReconciliation();
+    saveState();
+    renderTransactions();
+
     showNotification(`📊 ${state.ledgerEntries.length} lançamentos carregados do razão`, 'success');
-    if (elements.runReconciliation) elements.runReconciliation.disabled = false;
-    
+    if (elements.runReconciliation) elements.runReconciliation.disabled = state.ledgerEntries.length === 0;
+
   } catch (e) {
     console.error('Erro ao carregar razão:', e);
     showNotification('Erro ao processar arquivo de razão', 'error');
@@ -1306,13 +1659,15 @@ function exportToCSV() {
     return;
   }
   
-  const headers = ['Data', 'Descrição', 'Valor', 'Conta Contábil', 'Status'];
+  const headers = ['Data', 'Descrição', 'Valor', 'Conta Contábil', 'Status', 'Tipo Match', 'Score'];
   const rows = state.transactions.map(t => [
     formatDate(t.date),
     `"${t.description}"`,
     t.amount.toFixed(2),
     `"${t.account || ''}"`,
-    t.status === 'matched' ? 'Conciliado' : 'Pendente'
+    t.status === 'matched' ? 'Conciliado' : 'Pendente',
+    t.matchType || '',
+    t.matchScore ? t.matchScore.toFixed(4) : ''
   ]);
   
   const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -1337,7 +1692,8 @@ function exportToJSON() {
     transactions: state.transactions,
     accounts: state.accounts,
     rules: state.rules,
-    metrics: calculateMetrics()
+    metrics: calculateMetrics(),
+    reconciliationReport: state.reconciliationReport
   };
   
   const json = JSON.stringify(data, null, 2);
@@ -1485,10 +1841,8 @@ function setupDragAndDrop() {
     }
   });
   
-  // Permite click no label
-  dropZone.addEventListener('click', () => {
-    if (elements.fileInput) elements.fileInput.click();
-  });
+  // O input já é acionado pelo <label for="file-input"> no HTML
+  // Evita abrir a janela de seleção duas vezes.
 }
 
 // ============================================
