@@ -34,7 +34,8 @@ const state = {
   ocrEnabled: false,
   currentPage: 1,
   itemsPerPage: 100,
-  reconciliationReport: null
+  reconciliationReport: null,
+  previousBalance: null
 };
 
 const CONFIG = {
@@ -693,57 +694,77 @@ function loadTesseract() {
   });
 }
 
-/**
- * Processa PDF e tenta extrair transações
- */
+function detectBalanceColumn(rows) {
+  if (!rows || rows.length === 0) return -1;
+  const header = (rows[0] || []).map(c => (c || '').toLowerCase());
+  return header.findIndex(col => /saldo|balance|running/i.test(col));
+}
+
+function extractPreviousBalanceFromRows(rows, columns, hasHeader = true) {
+  const balanceCol = detectBalanceColumn(rows);
+  if (balanceCol === -1) return null;
+
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const firstValid = dataRows.find(r => r.length > Math.max(columns.dateCol, columns.amountCol, balanceCol));
+  if (!firstValid) return null;
+
+  const amount = parseAmount(firstValid[columns.amountCol]);
+  const runningBalance = parseAmount(firstValid[balanceCol]);
+  if (isNaN(amount) || isNaN(runningBalance)) return null;
+
+  return runningBalance - amount;
+}
+
+function parseTransactionsFromPDFText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const transactions = [];
+  let detectedPreviousBalance = null;
+
+  const linePattern = /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+([\(\)\-\+]?\s*R?\$?\s*[\d\.,]+\-?)\s*(?:([\(\)\-\+]?\s*R?\$?\s*[\d\.,]+\-?))?$/i;
+
+  lines.forEach(line => {
+    const match = line.match(linePattern);
+    if (!match) return;
+
+    const date = parseDate(match[1]);
+    const description = validators.sanitizeString(match[2]);
+    const amount = parseAmount(match[3]);
+    const maybeRunningBalance = match[4] ? parseAmount(match[4]) : null;
+
+    if (!date || !description || isNaN(amount)) return;
+
+    transactions.push({ date, description, amount, status: 'pending' });
+
+    if (detectedPreviousBalance === null && maybeRunningBalance !== null && !isNaN(maybeRunningBalance)) {
+      detectedPreviousBalance = maybeRunningBalance - amount;
+    }
+  });
+
+  return { transactions, detectedPreviousBalance };
+}
+
 async function processPDF(file, useOCR = false) {
   try {
     let text;
-    
+
     if (useOCR || state.ocrEnabled) {
       showNotification('🔍 Iniciando OCR... Isso pode levar alguns minutos.', 'info');
       text = await extractTextWithOCR(file);
     } else {
       text = await extractTextFromPDF(file);
     }
-    
+
     if (!text || text.trim().length < 50) {
       showNotification('PDF parece ser uma imagem. Ative o OCR e tente novamente.', 'warning');
-      return [];
+      return { transactions: [], detectedPreviousBalance: null };
     }
-    
-    // Tenta detectar formato de extrato bancário
-    const lines = text.split('\n').filter(l => l.trim());
-    const transactions = [];
-    
-    // Padrões comuns de extrato
-    const patterns = [
-      // DD/MM/YYYY Descrição 1.234,56
-      /(\d{2}\/\d{2}\/\d{4})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi,
-      // DD/MM Descrição Valor
-      /(\d{2}\/\d{2})\s+([^\d\-\+R$]+?)\s+([\-\+]?R?\$?\s*[\d\.,]+)/gi
-    ];
-    
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        const date = parseDate(match[1]);
-        const description = validators.sanitizeString(match[2]);
-        const amount = parseAmount(match[3]);
-        
-        if (date && description && !isNaN(amount)) {
-          transactions.push({ date, description, amount, status: 'pending' });
-        }
-      }
-      
-      if (transactions.length > 0) break;
-    }
-    
-    return transactions;
+
+    const parsed = parseTransactionsFromPDFText(text);
+    return parsed;
   } catch (e) {
     console.error('Erro ao processar PDF:', e);
     showNotification(e.message || 'Erro ao processar PDF', 'error');
-    return [];
+    return { transactions: [], detectedPreviousBalance: null };
   }
 }
 
@@ -759,6 +780,7 @@ async function processUploadedFiles(files) {
   
   let allNew = [];
   let errors = [];
+  let detectedPreviousBalance = null;
   
   elements.parseFiles.disabled = true;
   elements.parseFiles.textContent = 'Processando...';
@@ -775,10 +797,13 @@ async function processUploadedFiles(files) {
       
       if (fileName.endsWith('.pdf')) {
         showNotification(`📄 Processando PDF: ${file.name}`, 'info');
-        const pdfTransactions = await processPDF(file, state.ocrEnabled);
-        allNew.push(...pdfTransactions);
+        const pdfResult = await processPDF(file, state.ocrEnabled);
+        allNew.push(...pdfResult.transactions);
+        if (detectedPreviousBalance === null && pdfResult.detectedPreviousBalance !== null) {
+          detectedPreviousBalance = pdfResult.detectedPreviousBalance;
+        }
         
-        if (pdfTransactions.length === 0) {
+        if (pdfResult.transactions.length === 0) {
           errors.push(`${file.name}: Nenhuma transação encontrada no PDF`);
         }
         
@@ -814,6 +839,11 @@ async function processUploadedFiles(files) {
         );
         
         const dataRows = hasHeader ? rows.slice(1) : rows;
+
+        if (detectedPreviousBalance === null) {
+          const prev = extractPreviousBalanceFromRows(rows, columns, hasHeader);
+          if (prev !== null && !isNaN(prev)) detectedPreviousBalance = prev;
+        }
         
         dataRows.forEach(r => {
           if (r.length <= Math.max(dateCol, descCol, amountCol)) return;
@@ -859,22 +889,12 @@ async function processUploadedFiles(files) {
       status: t.status || 'pending',
       importedAt: new Date().toISOString()
     }));
-    
-    // Previne duplicatas
-    const existing = new Set(
-      state.transactions.map(t => {
-        const dateStr = t.date?.toISOString().split('T')[0] || '';
-        return `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
-      })
-    );
-    
-    const uniqueNew = withMetadata.filter(t => {
-      const dateStr = t.date?.toISOString().split('T')[0] || '';
-      const key = `${dateStr}|${t.description}|${t.amount.toFixed(2)}`;
-      return !existing.has(key);
-    });
-    
-    state.transactions.push(...uniqueNew);
+
+    // Mantém todas as linhas importadas (inclusive repetições legítimas)
+    const remainingCapacity = Math.max(0, CONFIG.maxTransactions - state.transactions.length);
+    const toInsert = withMetadata.slice(0, remainingCapacity);
+
+    state.transactions.push(...toInsert);
     
     // Ordena por data (mais recente primeiro)
     state.transactions.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
@@ -883,10 +903,15 @@ async function processUploadedFiles(files) {
     renderTransactions();
     
     // Notificação de sucesso
-    const duplicates = allNew.length - uniqueNew.length;
-    let msg = `✅ ${uniqueNew.length} transação(ões) importada(s) com sucesso!`;
-    if (duplicates > 0) {
-      msg += ` (${duplicates} duplicata(s) ignorada(s))`;
+    const ignoredByCapacity = allNew.length - toInsert.length;
+    let msg = `✅ ${toInsert.length} transação(ões) importada(s) com sucesso!`;
+    if (ignoredByCapacity > 0) {
+      msg += ` (${ignoredByCapacity} ignorada(s) por limite de ${CONFIG.maxTransactions})`;
+    }
+
+    if (detectedPreviousBalance !== null && !isNaN(detectedPreviousBalance)) {
+      state.previousBalance = detectedPreviousBalance;
+      msg += ` | Saldo anterior identificado: ${formatCurrency(detectedPreviousBalance)}`;
     }
     
     showNotification(msg, 'success');
@@ -985,7 +1010,8 @@ function calculateMetrics() {
     total: state.transactions.length,
     reconciled: 0,
     pending: 0,
-    reconciledPct: 0
+    reconciledPct: 0,
+    previousBalance: typeof state.previousBalance === 'number' ? state.previousBalance : null
   };
   
   state.transactions.forEach(t => {
@@ -1016,6 +1042,9 @@ function renderDashboard() {
   if (elements.statBalance) {
     elements.statBalance.textContent = formatCurrency(metrics.balance);
     elements.statBalance.className = metrics.balance >= 0 ? 'stat-value text-success' : 'stat-value text-danger';
+    elements.statBalance.title = metrics.previousBalance !== null
+      ? `Saldo anterior identificado: ${formatCurrency(metrics.previousBalance)}`
+      : 'Saldo anterior não identificado';
   }
   if (elements.statReconciled) elements.statReconciled.textContent = formatPercent(metrics.reconciledPct);
 }
@@ -1281,6 +1310,18 @@ function calculateSimilarity(str1, str2) {
   return maxLen === 0 ? 1 : (maxLen - distance) / maxLen;
 }
 
+function normalizeHistory(description) {
+  return (description || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(pagamento|pgto|pix|ted|doc|debito|credito|transferencia|transf|lote|parcela)\b/g, ' ')
+    .replace(/\b[a-z]\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function clearPreviousReconciliation() {
   state.transactions.forEach(transaction => {
     transaction.status = 'pending';
@@ -1318,7 +1359,8 @@ function runMatching() {
   const matchingResult = {
     exactMatches: [],
     toleranceMatches: [],
-    fuzzyMatches: []
+    fuzzyMatches: [],
+    groupMatches: []
   };
   
   try {
@@ -1415,7 +1457,90 @@ function runMatching() {
       });
     });
 
-    const matchCount = matchingResult.exactMatches.length + matchingResult.toleranceMatches.length + matchingResult.fuzzyMatches.length;
+    // [4/4] Conciliação em grupo por histórico semelhante (N:N)
+    const bankGroups = new Map();
+    const ledgerGroups = new Map();
+
+    getPendingTransactions().forEach(bank => {
+      const key = normalizeHistory(bank.description);
+      if (!key) return;
+      if (!bankGroups.has(key)) bankGroups.set(key, []);
+      bankGroups.get(key).push(bank);
+    });
+
+    getPendingLedgers().forEach(ledger => {
+      const key = normalizeHistory(ledger.description);
+      if (!key) return;
+      if (!ledgerGroups.has(key)) ledgerGroups.set(key, []);
+      ledgerGroups.get(key).push(ledger);
+    });
+
+    bankGroups.forEach((bankGroup, bankKey) => {
+      if (bankGroup.length < 2) return;
+
+      const totalBank = bankGroup.reduce((sum, item) => sum + item.amount, 0);
+      const minBankDate = Math.min(...bankGroup.map(i => i.date?.getTime() || 0));
+      const maxBankDate = Math.max(...bankGroup.map(i => i.date?.getTime() || 0));
+
+      let chosenLedgerKey = null;
+      let chosenScore = 0;
+
+      ledgerGroups.forEach((ledgerGroup, ledgerKey) => {
+        if (ledgerGroup.length < 2) return;
+        const sim = calculateSimilarity(bankKey, ledgerKey);
+        if (sim < 0.65) return;
+
+        const totalLedger = ledgerGroup.reduce((sum, item) => sum + item.value, 0);
+        const diffVal = Math.abs(totalBank - totalLedger);
+        if (diffVal > valTol * Math.max(bankGroup.length, ledgerGroup.length)) return;
+
+        const minLedgerDate = Math.min(...ledgerGroup.map(i => i.date?.getTime() || 0));
+        const maxLedgerDate = Math.max(...ledgerGroup.map(i => i.date?.getTime() || 0));
+        const diffDays = Math.abs((minBankDate - minLedgerDate) / 86400000);
+        const diffDays2 = Math.abs((maxBankDate - maxLedgerDate) / 86400000);
+        if (Math.max(diffDays, diffDays2) > daysTol) return;
+
+        if (sim > chosenScore) {
+          chosenScore = sim;
+          chosenLedgerKey = ledgerKey;
+        }
+      });
+
+      if (!chosenLedgerKey) return;
+      const ledgerGroup = ledgerGroups.get(chosenLedgerKey);
+      if (!ledgerGroup || ledgerGroup.some(item => item.matched) || bankGroup.some(item => item.status === 'matched')) return;
+
+      const groupReconId = reconciliationId;
+      reconciliationId += 1;
+
+      bankGroup.forEach(bank => {
+        bank.status = 'matched';
+        bank.matchType = 'GRUPO';
+        bank.reconciliationId = groupReconId;
+        bank.matchScore = chosenScore;
+      });
+
+      ledgerGroup.forEach(ledger => {
+        ledger.matched = true;
+        ledger.matchType = 'GRUPO';
+        ledger.reconciliationId = groupReconId;
+      });
+
+      matchingResult.groupMatches.push({
+        type: 'GRUPO',
+        reconciliationId: groupReconId,
+        bankCount: bankGroup.length,
+        ledgerCount: ledgerGroup.length,
+        similarity: chosenScore,
+        bankTotal: bankGroup.reduce((sum, i) => sum + i.amount, 0),
+        ledgerTotal: ledgerGroup.reduce((sum, i) => sum + i.value, 0),
+        bankKey,
+        ledgerKey: chosenLedgerKey
+      });
+    });
+
+    const matchCount = matchingResult.exactMatches.length + matchingResult.toleranceMatches.length + matchingResult.fuzzyMatches.length + matchingResult.groupMatches.length;
+
 
     state.reconciliationReport = {
       generatedAt: new Date().toISOString(),
@@ -1434,7 +1559,7 @@ function runMatching() {
     saveState();
     renderTransactions();
     
-    const msg = `🎯 ${matchCount} conciliação(ões): ${matchingResult.exactMatches.length} exata(s), ${matchingResult.toleranceMatches.length} tolerância, ${matchingResult.fuzzyMatches.length} fuzzy.`;
+    const msg = `🎯 ${matchCount} conciliação(ões): ${matchingResult.exactMatches.length} exata(s), ${matchingResult.toleranceMatches.length} tolerância, ${matchingResult.fuzzyMatches.length} fuzzy, ${matchingResult.groupMatches.length} em grupo.`;
     showNotification(msg, 'success');
     
     if (elements.reconciliationSummary) {
