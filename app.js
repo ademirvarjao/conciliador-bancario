@@ -895,10 +895,15 @@ async function processUploadedFiles(files) {
     const toInsert = withMetadata.slice(0, remainingCapacity);
 
     state.transactions.push(...toInsert);
-    
+
     // Ordena por data (mais recente primeiro)
     state.transactions.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
-    
+
+    // Garante visualização de todos os itens recém-importados
+    state.currentPage = 1;
+    if (elements.searchTransactions) elements.searchTransactions.value = '';
+    if (elements.filterStatus) elements.filterStatus.value = 'all';
+
     saveState();
     renderTransactions();
     
@@ -1836,10 +1841,8 @@ function setupDragAndDrop() {
     }
   });
   
-  // Permite click no label
-  dropZone.addEventListener('click', () => {
-    if (elements.fileInput) elements.fileInput.click();
-  });
+  // O input já é acionado pelo <label for="file-input"> no HTML
+  // Evita abrir a janela de seleção duas vezes.
 }
 
 // ============================================
