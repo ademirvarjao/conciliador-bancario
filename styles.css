@@ -805,3 +805,39 @@ textarea.form-control {
     grid-template-columns: 1fr;
   }
 }
+
+.server-converter {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.server-converter h3 {
+  margin-bottom: 8px;
+}
+
+.server-converter-description {
+  color: var(--gray-600);
+  margin-bottom: 12px;
+}
+
+.server-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.server-switches {
+  display: flex;
+  gap: 20px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .server-grid {
+    grid-template-columns: 1fr;
+  }
+}

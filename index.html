@@ -129,6 +129,43 @@
               </button>
             </div>
           </div>
+
+          <div class="server-converter">
+            <h3>Conversão pelo servidor do conciliador</h3>
+            <p class="server-converter-description">Use este formulário quando quiser enviar o PDF para o endpoint <code>/download/</code> ou <code>/ai_download/</code>.</p>
+
+            <div class="server-grid">
+              <div class="field-group full-width">
+                <label for="server-base-url">Servidor</label>
+                <input id="server-base-url" type="url" class="form-control" value="http://localhost:8000" placeholder="https://seu-servidor" />
+              </div>
+              <div class="field-group">
+                <label for="layout-servidor">Layout Banco</label>
+                <select id="layout-servidor" class="form-control"></select>
+              </div>
+              <div class="field-group">
+                <label for="conta-banco-servidor">Conta Contábil Banco</label>
+                <input id="conta-banco-servidor" type="number" class="form-control" placeholder="Ex: 11101" />
+              </div>
+              <div class="field-group">
+                <label for="cod-empresa-servidor">Código da Empresa</label>
+                <input id="cod-empresa-servidor" type="number" class="form-control" placeholder="Ex: 10" />
+              </div>
+              <div class="field-group">
+                <label for="extrato-servidor">Arquivo Extrato (PDF)</label>
+                <input id="extrato-servidor" type="file" class="form-control" accept=".pdf,application/pdf" />
+              </div>
+            </div>
+
+            <div class="server-switches">
+              <label><input id="sugerir-conta-servidor" type="checkbox" /> Sugerir Contas Contábeis</label>
+              <label><input id="processar-ia-servidor" type="checkbox" /> Converter com IA (Experimental)</label>
+            </div>
+
+            <div class="section-actions">
+              <button id="enviar-servidor" class="btn btn-primary" disabled>🚀 Processar no Servidor</button>
+            </div>
+          </div>
         </div>
       </section>
 

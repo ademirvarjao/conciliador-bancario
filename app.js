@@ -48,6 +48,22 @@ const CONFIG = {
   maxStringLengthForSimilarity: 80
 };
 
+const SERVER_LAYOUTS = [
+  'abc_layout_01','abc_layout_02','ativa_layout_01','banco_credvale_layout_01','banco_do_brasil_layout_01',
+  'banco_do_brasil_layout_02','banco_do_brasil_layout_03','banco_do_brasil_layout_04','banco_do_brasil_layout_05',
+  'bradesco_layout_01','bradesco_layout_02','bradesco_layout_03','bradesco_layout_04','btg_layout_01','c6_bank_layout_01',
+  'c6_bank_layout_02','cef_layout_01','cef_layout_02','cef_layout_03','cef_layout_04','cef_layout_05','cef_layout_06',
+  'cef_layout_07','cm_capital_layout_01','cm_capital_layout_02','cora_layout_01','daycoval_layout_01','fibank_layout_01',
+  'grafeno_layout_01','grafeno_layout_02','guanabara_layout_01','inter_layout_01','inter_layout_02','inter_layout_03',
+  'itau_layout_01','itau_layout_02','itau_layout_03','itau_layout_04','itau_layout_05','mercado_pago_layout_01',
+  'mirae_asset_layout_01','movvime_layout_01','nubank_layout_01','pagbank_layout_01','pagbank_layout_02','safra_layout_01',
+  'safra_layout_02','santander_layout_01','santander_layout_02','santander_layout_03','santander_layout_04','santander_layout_05',
+  'santander_layout_06','santander_layout_07','santander_layout_08','santander_layout_09','serra_layout_01','sicoob_layout_01',
+  'sicoob_layout_02','sicoob_layout_03','sicoob_layout_04','sicoob_layout_05','sicredi_layout_01','sicredi_layout_02',
+  'sicredi_layout_03','stone_layout_01','stone_layout_02','unicred_layout_01','unicred_layout_02','viacredi_layout_01',
+  'xp_investimentos_layout_01','ai_processing'
+];
+
 // ============================================
 // CACHE DE ELEMENTOS DOM
 // ============================================
@@ -91,8 +107,90 @@ const elements = {
   currencySelect: $('#currency-select'),
   ocrToggle: $('#ocr-toggle'),
   paginationContainer: $('#pagination-container'),
-  pageInfo: $('#page-info')
+  pageInfo: $('#page-info'),
+  serverBaseUrl: $('#server-base-url'),
+  serverLayout: $('#layout-servidor'),
+  serverBankAccount: $('#conta-banco-servidor'),
+  serverCompanyCode: $('#cod-empresa-servidor'),
+  serverStatementFile: $('#extrato-servidor'),
+  serverSuggestAccount: $('#sugerir-conta-servidor'),
+  serverAiProcessing: $('#processar-ia-servidor'),
+  serverSubmit: $('#enviar-servidor')
 };
+
+function prettifyLayout(layoutKey) {
+  return layoutKey
+    .replace(/_layout_/g, ' Layout ')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function fillServerLayouts() {
+  if (!elements.serverLayout) return;
+
+  elements.serverLayout.innerHTML = SERVER_LAYOUTS
+    .map(layout => `<option value="${layout}">${prettifyLayout(layout)}</option>`)
+    .join('');
+}
+
+function validateServerForm() {
+  if (!elements.serverSubmit) return;
+  const hasFile = Boolean(elements.serverStatementFile?.files?.length);
+  const hasLayout = Boolean(elements.serverLayout?.value);
+  const hasAccount = Boolean(elements.serverBankAccount?.value);
+  const hasCompany = Boolean(elements.serverCompanyCode?.value);
+  const hasServer = Boolean(elements.serverBaseUrl?.value);
+
+  elements.serverSubmit.disabled = !(hasFile && hasLayout && hasAccount && hasCompany && hasServer);
+}
+
+async function sendToConversionServer() {
+  const file = elements.serverStatementFile?.files?.[0];
+  if (!file) {
+    showNotification('Selecione um PDF para converter no servidor', 'warning');
+    return;
+  }
+
+  const baseUrl = (elements.serverBaseUrl?.value || '').replace(/\/$/, '');
+  const shouldUseAi = elements.serverAiProcessing?.checked;
+  const endpoint = shouldUseAi ? '/ai_download/' : '/download/';
+  const url = `${baseUrl}${endpoint}`;
+
+  const formData = new FormData();
+  formData.append('layout', elements.serverLayout.value);
+  formData.append('conta_banco', elements.serverBankAccount.value);
+  formData.append('cod_empresa', elements.serverCompanyCode.value);
+  formData.append('extrato', file);
+
+  if (elements.serverSuggestAccount?.checked) {
+    formData.append('sugerir_conta_ctb', 'y');
+  }
+
+  if (shouldUseAi) {
+    formData.append('processar_com_ia', 'y');
+  }
+
+  elements.serverSubmit.disabled = true;
+  elements.serverSubmit.textContent = 'Processando...';
+
+  try {
+    const response = await fetch(url, { method: 'POST', body: formData });
+    if (!response.ok) {
+      throw new Error(`Falha na API (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const outputName = `conversao_servidor_${Date.now()}.csv`;
+    downloadFile(blob, outputName);
+    showNotification('Arquivo convertido e baixado com sucesso', 'success');
+  } catch (error) {
+    console.error(error);
+    showNotification('Erro ao enviar arquivo ao servidor de conversão', 'error');
+  } finally {
+    elements.serverSubmit.textContent = '🚀 Processar no Servidor';
+    validateServerForm();
+  }
+}
 
 // ============================================
 // UTILITÁRIOS DE FORMATAÇÃO
@@ -2030,6 +2128,23 @@ function setupEventListeners() {
   if (elements.loadSamples) {
     elements.loadSamples.addEventListener('click', loadSampleData);
   }
+
+  if (elements.serverSubmit) {
+    elements.serverSubmit.addEventListener('click', sendToConversionServer);
+  }
+
+  [
+    elements.serverBaseUrl,
+    elements.serverLayout,
+    elements.serverBankAccount,
+    elements.serverCompanyCode,
+    elements.serverStatementFile
+  ].forEach((field) => {
+    if (field) {
+      field.addEventListener('change', validateServerForm);
+      field.addEventListener('input', validateServerForm);
+    }
+  });
 }
 
 // ============================================
@@ -2092,8 +2207,10 @@ function init() {
   console.log('%cLicença: MIT | 100% Open Source', 'color: #64748b;');
   
   loadState();
+  fillServerLayouts();
   setupEventListeners();
   setupDragAndDrop();
+  validateServerForm();
   updateUI();
   
   console.log('%c✅ Aplicação inicializada com sucesso!', 'color: #10b981;');
